@@ -16,6 +16,7 @@ def test_aggregate_day_weights_by_kg_and_splits_state():
         _row(amount=60_000, weight=2, market="통영 위판장"),    # 3만 원/kg
         _row(state="활어", amount=90_000, weight=3),
         _row(name="기타해면어류", amount=1, weight=1),          # 기타는 뺀다
+        _row(name="(활)기타", amount=50_000, weight=5),
         _row(amount=0, weight=5),                              # 금액 없음
     ])
     by_state = {g["state"]: g for g in groups}

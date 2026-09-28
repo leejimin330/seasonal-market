@@ -58,7 +58,7 @@ def _trim_outliers(rows: list[dict]) -> list[dict]:
     for row in rows:
         name = (row.get("mprcStdCodeNm") or "").strip()
         amount, weight = _num(row.get("csmtAmount")), _num(row.get("csmtWt"))
-        if not name or name.startswith("기타") or amount <= 0 or weight <= 0:
+        if not name or "기타" in name or amount <= 0 or weight <= 0:  # "기타…", "(활)기타" 같은 묶음 이름
             continue
         by_key[(row.get("mprcStdCode"), row.get("kdfshSttusNm") or "-")].append((amount / weight, row))
     kept = []
@@ -69,7 +69,7 @@ def _trim_outliers(rows: list[dict]) -> list[dict]:
 
 
 def aggregate_day(rows: list[dict]) -> list[dict]:
-    """하루치 행을 어종 × 상태(활어/선어/냉동 …)별로 묶는다. "기타…" 어종과 튀는 거래는 뺀다."""
+    """하루치 행을 어종 × 상태(활어/선어/냉동 …)별로 묶는다. "기타"가 들어간 묶음 이름과 튀는 거래는 뺀다."""
     groups: dict[tuple, dict] = {}
     for row in _trim_outliers(rows):
         name = row["mprcStdCodeNm"].strip()
@@ -258,6 +258,8 @@ class FishQueries:
         latest, week_start, prev_start = windows
         by_key: dict[tuple, list[dict]] = defaultdict(list)
         for row in self.db.fish_rows(prev_start):
+            if "기타" in row["name"]:
+                continue  # 걸러내기 전에 받아 둔 묶음 이름이 남아 있을 수 있다
             by_key[(row["code"], row["state"])].append(row)
 
         result = []
