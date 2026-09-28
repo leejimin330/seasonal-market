@@ -23,7 +23,11 @@ const session = {
     drawNav();
   },
   setCredits(n) {
-    if (typeof n === 'number') { this.credits = n; drawNav(); }
+    if (typeof n !== 'number') return;
+    this.credits = n;
+    drawNav();
+    // 다른 패널의 "보유 N 크레딧"도 같이 맞춘다 — 한쪽에서 쓰면 다른 쪽이 옛 숫자로 남는다.
+    document.querySelectorAll('[data-my-credits]').forEach((el) => { el.textContent = n; });
   },
   async refresh() {
     this.set(await api.me());

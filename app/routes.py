@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -54,8 +54,15 @@ def _item_or_404(request: Request, item_id: str):
     return item
 
 
-def _item_json(item, summary: dict, month: int) -> dict:
+# 마지막 조사일이 이보다 오래되면 "지금은 조사되지 않음"으로 본다. 딸기·참다래처럼
+# 철이 지나면 aT가 조사를 멈추는 품목의 몇 달 전 가격이 현재 가격처럼 보이지 않게.
+STALE_DAYS = 14
+
+
+def _item_json(item, summary: dict, month: int, today) -> dict:
+    stale = bool(summary.get("date")) and (today - date.fromisoformat(summary["date"])).days > STALE_DAYS
     return {
+        "stale": stale,
         "id": item.id,
         "name": item.name,
         "category": item.category,
@@ -116,18 +123,18 @@ def status(request: Request):
 @router.get("/items")
 def list_items(request: Request):
     state = request.app.state
-    month = today_kst(state.clock).month
+    today = today_kst(state.clock)
     summaries = state.prices.summaries()
-    return {"month": month, "items": [_item_json(i, summaries[i.id], month) for i in state.catalog]}
+    return {"month": today.month, "items": [_item_json(i, summaries[i.id], today.month, today) for i in state.catalog]}
 
 
 @router.get("/items/{item_id}")
 def item_detail(request: Request, item_id: str, user_id: str | None = Depends(optional_user)):
     state = request.app.state
     item = _item_or_404(request, item_id)
-    month = today_kst(state.clock).month
+    today = today_kst(state.clock)
     summary = state.prices.summaries()[item.id]
-    return {**_item_json(item, summary, month), "access": _access(request, user_id, item.id)}
+    return {**_item_json(item, summary, today.month, today), "access": _access(request, user_id, item.id)}
 
 
 # ── 유료 ────────────────────────────────────────────────────

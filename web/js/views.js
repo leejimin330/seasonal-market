@@ -13,7 +13,7 @@ const iGa = (word) => {
 };
 
 function deltaBadge(pct) {
-  if (pct == null) return '<span class="delta flat">평년 정보 없음</span>';
+  if (pct == null) return '<span class="delta flat">평년가 계산 중</span>';
   if (Math.abs(pct) < 1) return '<span class="delta flat">평년 수준</span>';
   return pct < 0
     ? `<span class="delta down" title="평년보다 ${Math.abs(pct)}% 쌉니다">▼ 평년보다 ${Math.abs(pct)}%</span>`
@@ -34,7 +34,7 @@ export async function mainView(view) {
   const { month, items } = await api.items();
   const inSeason = items.filter((i) => i.in_season);
 
-  const cheap = inSeason.filter((i) => i.vs_normal != null && i.vs_normal < 0)
+  const cheap = inSeason.filter((i) => !i.stale && i.vs_normal != null && i.vs_normal < 0)
     .sort((a, b) => a.vs_normal - b.vs_normal).slice(0, 5);
 
   view.innerHTML = `
@@ -75,17 +75,17 @@ export async function mainView(view) {
     if (mainState.seasonOnly) list = list.filter((i) => i.in_season);
     list.sort(mainState.sort === 'name'
       ? (a, b) => a.name.localeCompare(b.name, 'ko')
-      : (a, b) => (a.vs_normal ?? 999) - (b.vs_normal ?? 999));
+      : (a, b) => (a.stale - b.stale) || (a.vs_normal ?? 999) - (b.vs_normal ?? 999));
     grid.innerHTML = list.length ? list.map((i) => `
       <a class="card" href="#/item/${i.id}">
         <div class="card-top">
           <h3>${esc(i.name)}</h3>
           ${i.in_season ? '<span class="badge">제철</span>' : `<span class="tag">${esc(i.category)}</span>`}
         </div>
-        <div class="price num">${i.price == null ? '<span class="tag">가격 정보 없음</span>' : `${won(i.price)}<small>/ ${esc(i.price_unit)}</small>`}</div>
+        <div class="price num">${i.price == null || i.stale ? '<span class="tag">지금은 조사되지 않아요</span>' : `${won(i.price)}<small>/ ${esc(i.price_unit)}</small>`}</div>
         <div class="card-foot">
           <span>${esc(i.main_region)}</span>
-          ${i.price == null ? '' : deltaBadge(i.vs_normal)}
+          ${i.price == null || i.stale ? '' : deltaBadge(i.vs_normal)}
         </div>
       </a>`).join('') : '<p class="empty">조건에 맞는 품목이 없어요.</p>';
   };
@@ -129,9 +129,9 @@ export async function itemView(view, id, session) {
         </div>
       </div>
       <div class="now-box">
-        <div class="label">현재 소매가 ${item.date ? `· ${item.date} 기준` : ''}</div>
+        <div class="label">${item.stale ? `마지막 조사 · ${item.date}` : `현재 소매가 ${item.date ? `· ${item.date} 기준` : ''}`}</div>
         <div class="price num">${item.price == null ? '정보 없음' : `${won(item.price)}<small>/ ${esc(item.price_unit)}</small>`}</div>
-        ${item.price == null ? '' : deltaBadge(item.vs_normal)}
+        ${item.price == null ? '' : item.stale ? '<span class="delta flat">철이 지나 지금은 조사되지 않아요</span>' : deltaBadge(item.vs_normal)}
       </div>
     </section>
     <div class="months" aria-label="제철 달">
@@ -149,7 +149,7 @@ export async function itemView(view, id, session) {
   });
   setupPaid(view.querySelector('#where-panel'), {
     title: '어디서 사면 쌀까', feature: 'where', item, session,
-    disabled: item.price == null ? '이 품목은 아직 가격 기록이 없어요.' : null,
+    disabled: item.price == null || item.stale ? '지금은 조사되지 않는 품목이라 판매처별 가격이 없어요.' : null,
     teaser: '전통시장과 대형마트 중 어디가 더 싼지, 어느 지역이 가장 싼지 전국 조사 가격으로 비교해 드려요.',
     load: () => api.where(item.id),
     render: renderWhere,
@@ -168,7 +168,7 @@ function setupPaid(panel, opts) {
     }
     const action = session.user
       ? `<button class="btn" data-unlock>🔓 ${access.cost} 크레딧으로 24시간 보기</button>
-         <span class="unlock-note">보유 ${session.credits} 크레딧</span>`
+         <span class="unlock-note">보유 <span data-my-credits>${session.credits}</span> 크레딧</span>`
       : `<a class="btn" href="#/login?next=${encodeURIComponent(location.hash)}">로그인하고 보기</a>
          <span class="unlock-note">가입하면 크레딧을 드려요</span>`;
     panel.innerHTML = `${head()}<div class="locked"><span class="lock-icon" aria-hidden="true">🔒</span>
