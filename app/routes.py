@@ -1,6 +1,6 @@
 """HTTP API.
 
-무료: 품목 목록·현재 가격·평년 대비 등락률. 유료: 가격 추이, 어디서 살까(판매처 유형별 비교).
+무료: 품목 목록·현재 가격·평년 대비 등락률·가격 추이. 유료: 어디서 살까(판매처 유형별 비교).
 유료 요청은 POST다 — 크레딧이 움직이는 요청이 링크 미리보기나 새로고침으로
 일어나지 않게, 그리고 SameSite=Lax 쿠키가 다른 사이트의 요청에 실리지 않게.
 """
@@ -72,6 +72,8 @@ def _item_json(item, summary: dict, month: int, today) -> dict:
         "season_months": sorted(item.season_months),
         "main_region": item.main_region,
         "season_note": item.season_note,
+        "emoji": item.emoji,
+        "intro": item.intro,
         "has_price": summary.get("price") is not None,
         **summary,
     }
@@ -80,7 +82,7 @@ def _item_json(item, summary: dict, month: int, today) -> dict:
 def _access(request: Request, user_id: str | None, item_id: str) -> dict:
     credits = request.app.state.credits
     result = {}
-    for feature in ("trend", "where"):
+    for feature in ("where",):
         until = credits.unlocked_until(user_id, feature, item_id) if user_id else None
         result[feature] = {"cost": credits.cost(feature), "unlocked_until": until}
     return result
@@ -114,7 +116,7 @@ def status(request: Request):
         "last_collect": state.db.get_meta("last_collect"),
         "history": state.prices.history_progress(),
         "today": today_kst(state.clock).isoformat(),
-        "costs": {"trend": state.credits.cost("trend"), "where": state.credits.cost("where")},
+        "costs": {"where": state.credits.cost("where")},
         "unlock_hours": state.credits.unlock_hours,
         "signup_bonus": state.signup_bonus,
     }
@@ -134,24 +136,26 @@ def item_detail(request: Request, item_id: str, user_id: str | None = Depends(op
     item = _item_or_404(request, item_id)
     today = today_kst(state.clock)
     summary = state.prices.summaries()[item.id]
-    return {**_item_json(item, summary, today.month, today), "access": _access(request, user_id, item.id)}
+    return {
+        **_item_json(item, summary, today.month, today),
+        "pick": item.pick,
+        "store": item.store,
+        "access": _access(request, user_id, item.id),
+    }
 
 
-# ── 유료 ────────────────────────────────────────────────────
-
-@router.post("/items/{item_id}/trend")
-def trend(request: Request, item_id: str, user_id: str = Depends(require_user)):
-    """1년치를 한 번에 준다. 4주/3개월/1년 전환은 화면에서 자른다 — 기간을 바꿀 때마다
-    요청하지 않게, 그리고 이용권 하나로 모든 기간을 보게."""
+@router.get("/items/{item_id}/trend")
+def trend(request: Request, item_id: str):
+    """무료. 1년치를 한 번에 준다 — 4주/3개월/1년 전환은 화면에서 자른다."""
     state = request.app.state
     item = _item_or_404(request, item_id)
     series = state.prices.series(item.id)
     if not any(point["price"] for point in series):
-        # 보여줄 게 없는데 돈을 받지 않는다.
         raise HTTPException(404, "이 품목은 아직 가격 기록이 없습니다.")
-    charge = _charge(request, user_id, "trend", item.id)
-    return {"series": series, "price_unit": item.price_unit, **_charge_json(charge)}
+    return {"series": series, "price_unit": item.price_unit}
 
+
+# ── 유료 ────────────────────────────────────────────────────
 
 @router.post("/items/{item_id}/where")
 def where(request: Request, item_id: str, user_id: str = Depends(require_user)):

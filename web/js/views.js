@@ -1,6 +1,7 @@
 // 화면들. 각 함수는 #view를 채운다. 사용자 상태는 main.js의 session을 받는다.
 
 import { api, ApiError } from './api.js';
+import { carousel } from './carousel.js';
 import { renderTrendChart } from './chart.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15,7 +16,7 @@ const SHOPS = [
   ['G마켓', (q) => `https://www.gmarket.co.kr/n/search?keyword=${q}`],
 ];
 
-const CATEGORY_GROUP = { 채소: '채소', 과채: '과일', 과일: '과일', 수산: '수산' };
+const CATEGORY_GROUP = { 채소: '채소', 버섯: '채소', 기타: '채소', 과채: '과일', 과일: '과일', 수산: '수산' };
 // 받침 유무로 이/가를 고른다 ("전통시장이", "대형마트가"). 한글이 아니면 받침 없음으로 본다.
 const iGa = (word) => {
   const code = String(word).charCodeAt(String(word).length - 1) - 0xac00;
@@ -48,13 +49,7 @@ export async function mainView(view) {
     .sort((a, b) => a.vs_normal - b.vs_normal).slice(0, 5);
 
   view.innerHTML = `
-    <section class="hero">
-      <div>
-        <div class="eyebrow">${month}월의 장바구니</div>
-        <h1>지금 제철인 ${inSeason.length}가지,<br>평년보다 얼마나 쌀까요?</h1>
-        <p>현재 가격과 평년 대비 등락은 무료예요. 가격 추이와 판매처별 가격은 크레딧으로 볼 수 있어요.</p>
-      </div>
-    </section>
+    <section class="hero-carousel" id="hero"></section>
     ${cheap.length ? `
     <section class="cheap-strip">
       <h2 class="section-title">지금 싼 제철 품목 <small>평년 대비 하락률 순</small></h2>
@@ -62,7 +57,7 @@ export async function mainView(view) {
         ${cheap.map((i, n) => `
           <a class="cheap-card" href="#/item/${i.id}">
             <span class="cheap-rank">${n + 1}</span>
-            <div><b>${esc(i.name)}</b><span>▼ ${Math.abs(i.vs_normal)}%</span></div>
+            <div><b>${i.emoji} ${esc(i.name)}</b><span>▼ ${Math.abs(i.vs_normal)}%</span></div>
           </a>`).join('')}
       </div>
     </section>` : ''}
@@ -79,6 +74,8 @@ export async function mainView(view) {
       <div class="grid" id="item-grid"></div>
     </section>`;
 
+  drawHero(view.querySelector('#hero'), { month, inSeason, cheap });
+
   const grid = view.querySelector('#item-grid');
   const draw = () => {
     let list = items.filter((i) => mainState.group === '전체' || CATEGORY_GROUP[i.category] === mainState.group);
@@ -89,7 +86,7 @@ export async function mainView(view) {
     grid.innerHTML = list.length ? list.map((i) => `
       <a class="card" href="#/item/${i.id}">
         <div class="card-top">
-          <h3>${esc(i.name)}</h3>
+          <h3><span class="emoji" aria-hidden="true">${i.emoji}</span>${esc(i.name)}</h3>
           ${i.in_season ? '<span class="badge">제철</span>' : `<span class="tag">${esc(i.category)}</span>`}
         </div>
         <div class="price num">${i.price == null || i.stale ? '<span class="tag">지금은 조사되지 않아요</span>' : `${won(i.price)}<small>/ ${esc(i.price_unit)}</small>`}</div>
@@ -114,6 +111,37 @@ export async function mainView(view) {
   view.querySelector('[data-sort]').addEventListener('change', (e) => { mainState.sort = e.target.value; draw(); });
 }
 
+// 메인 배너. 첫 장은 이번 달 요약, 다음 장부터 평년보다 싼 제철 품목을 한 장에 하나씩.
+function drawHero(host, { month, inSeason, cheap }) {
+  const { node, addSlide } = carousel({ label: '이번 달 제철 추천' });
+  host.appendChild(node);
+
+  const intro = document.createElement('div');
+  intro.className = 'hero-slide hero-intro';
+  intro.innerHTML = `
+    <div class="eyebrow">${month}월의 장바구니</div>
+    <h1>지금 제철인 ${inSeason.length}가지,<br>평년보다 얼마나 쌀까요?</h1>
+    <p>현재 가격, 평년 대비 등락, 가격 추이는 무료예요.<br>전통시장·대형마트 중 어디가 싼지는 크레딧으로 볼 수 있어요.</p>
+    <div class="hero-emojis" aria-hidden="true">${inSeason.slice(0, 8).map((i) => i.emoji).join(' ')}</div>`;
+  addSlide(intro);
+
+  for (const i of cheap) {
+    const slide = document.createElement('a');
+    slide.className = 'hero-slide hero-item';
+    slide.href = `#/item/${i.id}`;
+    slide.innerHTML = `
+      <div class="hero-item-emoji" aria-hidden="true">${i.emoji}</div>
+      <div class="hero-item-body">
+        <div class="eyebrow">제철 · 평년보다 싸요</div>
+        <h2>${esc(i.name)} <span class="hero-drop">▼ ${Math.abs(i.vs_normal)}%</span></h2>
+        <p class="hero-price num">${won(i.price)} <small>/ ${esc(i.price_unit)} · ${esc(i.date)} 기준</small></p>
+        <p class="hero-intro-text">${esc(i.intro)}</p>
+        <span class="hero-cta">자세히 보기 →</span>
+      </div>`;
+    addSlide(slide);
+  }
+}
+
 // ── 품목 상세 ────────────────────────────────────────────────
 
 export async function itemView(view, id, session) {
@@ -131,7 +159,8 @@ export async function itemView(view, id, session) {
     <a class="back" href="#/">← 목록</a>
     <section class="detail-head">
       <div>
-        <h1>${esc(item.name)}</h1>
+        <h1><span class="emoji" aria-hidden="true">${item.emoji}</span>${esc(item.name)}</h1>
+        ${item.intro ? `<p class="detail-intro">${esc(item.intro)}</p>` : ''}
         <div class="detail-meta">
           ${item.in_season ? '<span class="badge">지금 제철</span>' : '<span class="tag">제철 아님</span>'}
           <span>주산지 ${esc(item.main_region) || '—'}</span>
@@ -153,12 +182,16 @@ export async function itemView(view, id, session) {
       <span class="unlock-note">각 쇼핑몰의 "${esc(item.name)}" 검색 결과로 이동해요.</span>
     </section>
     <section class="panel" id="trend-panel"></section>
+    ${item.pick || item.store ? `
+    <section class="tips">
+      ${item.pick ? `<div class="tip"><h3>🛒 고르는 법</h3><p>${esc(item.pick)}</p></div>` : ''}
+      ${item.store ? `<div class="tip"><h3>🧊 보관법</h3><p>${esc(item.store)}</p></div>` : ''}
+    </section>` : ''}
     <section class="panel" id="where-panel"></section>`;
 
-  setupPaid(view.querySelector('#trend-panel'), {
-    title: '가격 변동 추이', feature: 'trend', item, session,
-    disabled: item.price == null ? '이 품목은 아직 가격 기록이 없어요.' : null,
-    teaser: '최근 4주 · 3개월 · 1년 동안의 소매가를 평년가와 겹쳐서 보여드려요.',
+  setupFree(view.querySelector('#trend-panel'), {
+    title: '가격 변동 추이',
+    empty: item.price == null ? '이 품목은 아직 가격 기록이 없어요.' : null,
     load: () => api.trend(item.id),
     render: renderTrend,
   });
@@ -169,6 +202,22 @@ export async function itemView(view, id, session) {
     load: () => api.where(item.id),
     render: renderWhere,
   });
+}
+
+async function setupFree(panel, { title, empty, load, render }) {
+  const head = `<div class="panel-head"><h2>${title}</h2></div>`;
+  if (empty) {
+    panel.innerHTML = `${head}<p class="empty">${empty}</p>`;
+    return;
+  }
+  panel.innerHTML = `${head}<p class="empty">불러오는 중…</p>`;
+  try {
+    const data = await load();
+    panel.innerHTML = `${head}<div data-body></div>`;
+    render(panel.querySelector('[data-body]'), data);
+  } catch (err) {
+    panel.innerHTML = `${head}<p class="empty">${esc(err.message)}</p>`;
+  }
 }
 
 function setupPaid(panel, opts) {

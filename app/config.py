@@ -33,8 +33,8 @@ PORT = int(os.environ.get("SEASONAL_PORT", "8741"))
 DATA_GO_KR_KEY = os.environ.get("DATA_GO_KR_KEY", "").strip()
 
 # 크레딧 (설계 2/4). 이용권은 품목 하나 × 기능 하나 단위로 24시간 열린다.
+# 가격 추이는 2026-09-28부터 무료다 — 유료는 "어디서 살까"만.
 SIGNUP_BONUS = int(os.environ.get("SEASONAL_SIGNUP_BONUS", "20"))
-TREND_COST = int(os.environ.get("SEASONAL_TREND_COST", "1"))
 WHERE_COST = int(os.environ.get("SEASONAL_WHERE_COST", "2"))
 UNLOCK_HOURS = float(os.environ.get("SEASONAL_UNLOCK_HOURS", "24"))
 

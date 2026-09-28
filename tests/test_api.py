@@ -34,24 +34,30 @@ def test_free_views_need_no_login(app_and_client):
     assert len(items) >= 30
     assert all(item["price"] for item in items)  # 샘플 모드에서는 모두 가격이 있다
     detail = client.get("/api/items/mackerel").json()
-    assert detail["access"]["trend"] == {"cost": 1, "unlocked_until": None}
+    assert detail["access"] == {"where": {"cost": 2, "unlocked_until": None}}
     assert client.get("/api/items/nope").status_code == 404
 
 
 def test_paid_features_need_login(app_and_client):
     _, client, _ = app_and_client
-    assert client.post("/api/items/mackerel/trend").status_code == 401
     assert client.post("/api/items/mackerel/where").status_code == 401
 
 
-def test_signup_gives_bonus_and_trend_charges_once(app_and_client):
+def test_trend_is_free_without_login(app_and_client):
+    _, client, _ = app_and_client
+    data = client.get("/api/items/mackerel/trend").json()
+    assert len(data["series"]) > 200  # 평일 조사분만
+    assert "charged" not in data
+
+
+def test_signup_bonus_and_where_charges_once(app_and_client):
     _, client, _ = app_and_client
     assert _signup(client)["credits"] == 20
-    first = client.post("/api/items/mackerel/trend").json()
-    assert first["charged"] and first["balance"] == 19 and len(first["series"]) > 200  # 평일 조사분만
-    again = client.post("/api/items/mackerel/trend").json()
-    assert not again["charged"] and again["balance"] == 19
-    assert client.get("/api/items/mackerel").json()["access"]["trend"]["unlocked_until"]
+    first = client.post("/api/items/mackerel/where").json()
+    assert first["charged"] and first["balance"] == 18
+    again = client.post("/api/items/mackerel/where").json()
+    assert not again["charged"] and again["balance"] == 18
+    assert client.get("/api/items/mackerel").json()["access"]["where"]["unlocked_until"]
 
 
 def test_where_returns_channels_and_regions(app_and_client):

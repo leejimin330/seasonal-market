@@ -36,6 +36,11 @@ class Item:
     season_months: frozenset[int] = field(default_factory=frozenset)
     main_region: str = ""
     season_note: str = ""
+    # descriptions.csv — 사람이 쓴 소개글. 없는 품목은 빈칸으로 둔다.
+    emoji: str = ""
+    intro: str = ""
+    pick: str = ""       # 고르는 법
+    store: str = ""      # 보관법
 
     @property
     def price_unit(self) -> str:
@@ -70,6 +75,14 @@ def load_catalog(data_dir: Path) -> Catalog:
         for row in csv.DictReader(f):
             seasons[row["item_id"]] = row
 
+    descriptions: dict[str, dict] = {}
+    path = data_dir / "descriptions.csv"
+    if path.exists():
+        # 설명 문장에 쉼표가 많아 구분자는 | 를 쓰고, 따옴표는 인용 부호가 아니라 글자로 읽는다.
+        with open(path, encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f, delimiter="|", quoting=csv.QUOTE_NONE):
+                descriptions[row["item_id"]] = row
+
     items: list[Item] = []
     with open(data_dir / "items.csv", encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
@@ -94,6 +107,10 @@ def load_catalog(data_dir: Path) -> Catalog:
                     season_months=months,
                     main_region=season.get("main_region", ""),
                     season_note=season.get("note", ""),
+                    emoji=descriptions.get(row["id"], {}).get("emoji", ""),
+                    intro=descriptions.get(row["id"], {}).get("intro", ""),
+                    pick=descriptions.get(row["id"], {}).get("pick", ""),
+                    store=descriptions.get(row["id"], {}).get("store", ""),
                 )
             )
     missing = {item.id for item in items} - set(seasons)
