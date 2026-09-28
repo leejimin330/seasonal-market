@@ -140,6 +140,8 @@ def item_detail(request: Request, item_id: str, user_id: str | None = Depends(op
         **_item_json(item, summary, today.month, today),
         "pick": item.pick,
         "store": item.store,
+        "nutrition": state.nutrition.get(item.id),
+        "nutrition_source": state.nutrition.source,
         "access": _access(request, user_id, item.id),
     }
 

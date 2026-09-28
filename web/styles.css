@@ -224,6 +224,16 @@ select.chip { appearance: none; padding-right: 14px; }
 .tip { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
 .tip h3 { margin: 0 0 6px; font-size: 15px; }
 .tip p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.nutrition .panel-head h2 small { font-size: 13px; font-weight: 400; color: var(--ink-3); margin-left: 4px; }
+.nutrition-body { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.kcal { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 120px; padding: 16px; border-radius: 14px; background: var(--brand-soft); }
+.kcal b { font-size: 34px; line-height: 1.1; color: var(--brand); }
+.kcal span { font-size: 13px; color: var(--ink-2); }
+.nutrients { flex: 1; min-width: 240px; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.nutrients div { background: var(--surface-2); border-radius: 10px; padding: 8px 12px; }
+.nutrients dt { font-size: 12px; color: var(--ink-3); }
+.nutrients dd { margin: 0; font-weight: 700; }
+.nutrients dd small { font-weight: 400; color: var(--ink-3); margin-left: 2px; font-size: 12px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .panel-head h2 { font-size: 18px; margin: 0; letter-spacing: -.02em; }

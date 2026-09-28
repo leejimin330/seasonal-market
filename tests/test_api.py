@@ -143,3 +143,12 @@ def test_switching_to_real_source_drops_sample_rows(app_and_client):
     app.state.prices.collect()
     assert app.state.db.price_sources() == {"at"}
     assert app.state.prices.breakdown("apple")["channels"]["전통시장"]["avg"] == 1000
+
+
+def test_item_detail_has_nutrition_and_tips(app_and_client):
+    _, client, _ = app_and_client
+    detail = client.get("/api/items/mackerel").json()
+    assert detail["intro"] and detail["pick"] and detail["store"]
+    values = {v["key"]: v["value"] for v in detail["nutrition"]["values"]}
+    assert values["kcal"] == 183.0 and values["protein"] == 20.2
+    assert "식품의약품안전처" in detail["nutrition_source"]

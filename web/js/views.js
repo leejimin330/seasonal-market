@@ -142,6 +142,24 @@ function drawHero(host, { month, inSeason, cheap }) {
   }
 }
 
+function nutritionPanel(item) {
+  const values = item.nutrition.values;
+  const kcal = values.find((v) => v.key === 'kcal');
+  const rest = values.filter((v) => v.key !== 'kcal');
+  const fmt = (v) => (v.value >= 100 ? Math.round(v.value) : Math.round(v.value * 10) / 10).toLocaleString('ko-KR');
+  return `
+    <section class="panel nutrition">
+      <div class="panel-head"><h2>영양성분 <small>100g당</small></h2></div>
+      <div class="nutrition-body">
+        ${kcal ? `<div class="kcal"><b class="num">${fmt(kcal)}</b><span>kcal</span></div>` : ''}
+        <dl class="nutrients">
+          ${rest.map((v) => `<div><dt>${v.label}</dt><dd class="num">${fmt(v)}<small>${v.unit}</small></dd></div>`).join('')}
+        </dl>
+      </div>
+      <p class="fineprint">"${esc(item.nutrition.food_name)}" 기준 · 출처: ${esc(item.nutrition_source)}</p>
+    </section>`;
+}
+
 // ── 품목 상세 ────────────────────────────────────────────────
 
 export async function itemView(view, id, session) {
@@ -187,6 +205,7 @@ export async function itemView(view, id, session) {
       ${item.pick ? `<div class="tip"><h3>🛒 고르는 법</h3><p>${esc(item.pick)}</p></div>` : ''}
       ${item.store ? `<div class="tip"><h3>🧊 보관법</h3><p>${esc(item.store)}</p></div>` : ''}
     </section>` : ''}
+    ${item.nutrition ? nutritionPanel(item) : ''}
     <section class="panel" id="where-panel"></section>`;
 
   setupFree(view.querySelector('#trend-panel'), {
