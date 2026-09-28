@@ -23,9 +23,9 @@ import httpx  # noqa: E402
 from app import config  # noqa: E402
 
 API_URL = "https://apis.data.go.kr/1471000/FoodNtrCpntDbInfo03/getFoodNtrCpntDbInq03"
-CATEGORIES = ["채소류", "과일류", "버섯류", "어패류", "감자 및 전분류", "견과 및 종실류"]
-# 해조류는 식품대분류가 비어 있어 분류로는 안 잡힌다. 이름으로 찾는다.
-NAME_SEARCHES = ["미역", "다시마", "김, "]
+CATEGORIES = ["채소류", "과일류", "버섯류", "어패류", "감자 및 전분류", "견과 및 종실류", "곡류", "두류"]
+# 해조류·고기·달걀은 식품대분류가 비어 있어 분류로는 안 잡힌다. 이름으로 찾는다.
+NAME_SEARCHES = ["미역", "다시마", "김, ", "소고기", "돼지고기", "닭고기", "달걀", "소금"]
 FIELDS = {  # AMT_NUMn → (키, 단위)
     1: "kcal", 2: "water", 3: "protein", 4: "fat", 5: "ash", 6: "carbs",
     7: "sugar", 8: "fiber", 9: "calcium", 10: "iron", 11: "phosphorus", 12: "potassium", 13: "sodium",
@@ -56,7 +56,7 @@ def main() -> None:
                 if item.get("DB_GRP_NM") != "원재료성" or item.get("SERVING_SIZE") != "100g":
                     continue
                 foods[item["FOOD_NM_KR"]] = {
-                    "category": item.get("FOOD_CAT1_NM") or "해조류",
+                    "category": item.get("FOOD_CAT1_NM") or "분류 없음",
                     **{key: _num(item.get(f"AMT_NUM{n}")) for n, key in FIELDS.items()},
                 }
             print(f"{category} {page}쪽 · 누적 {len(foods)}", flush=True)

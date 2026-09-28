@@ -41,7 +41,8 @@ class Item:
     intro: str = ""
     pick: str = ""       # 고르는 법
     store: str = ""      # 보관법
-    story: str = ""      # 산지 이야기 (stories.csv)
+    story: str = ""      # stories.csv
+    story_kind: str = ""  # origin = 산지 이야기, tip = 알아두면 좋은 점 (산지 이야기가 마땅치 않은 품목)
 
     @property
     def price_unit(self) -> str:
@@ -84,12 +85,12 @@ def load_catalog(data_dir: Path) -> Catalog:
             for row in csv.DictReader(f, delimiter="|", quoting=csv.QUOTE_NONE):
                 descriptions[row["item_id"]] = row
 
-    stories: dict[str, str] = {}
+    stories: dict[str, dict] = {}
     path = data_dir / "stories.csv"
     if path.exists():
         with open(path, encoding="utf-8", newline="") as f:
             for row in csv.DictReader(f, delimiter="|", quoting=csv.QUOTE_NONE):
-                stories[row["item_id"]] = row["story"]
+                stories[row["item_id"]] = row
 
     items: list[Item] = []
     with open(data_dir / "items.csv", encoding="utf-8", newline="") as f:
@@ -119,7 +120,8 @@ def load_catalog(data_dir: Path) -> Catalog:
                     intro=descriptions.get(row["id"], {}).get("intro", ""),
                     pick=descriptions.get(row["id"], {}).get("pick", ""),
                     store=descriptions.get(row["id"], {}).get("store", ""),
-                    story=stories.get(row["id"], ""),
+                    story=stories.get(row["id"], {}).get("story", ""),
+                    story_kind=stories.get(row["id"], {}).get("kind", ""),
                 )
             )
     missing = {item.id for item in items} - set(seasons)

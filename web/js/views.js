@@ -17,7 +17,7 @@ const SHOPS = [
   ['G마켓', (q) => `https://www.gmarket.co.kr/n/search?keyword=${q}`],
 ];
 
-const CATEGORY_GROUP = { 채소: '채소', 버섯: '채소', 기타: '채소', 과채: '과일', 과일: '과일', 수산: '수산' };
+const CATEGORY_GROUP = { 채소: '채소', 버섯: '채소', 과채: '과일', 과일: '과일', 수산: '수산', 축산: '축산', 곡물: '곡물', 견과: '곡물', 기타: '곡물' };
 // 받침 유무로 이/가를 고른다 ("전통시장이", "대형마트가"). 한글이 아니면 받침 없음으로 본다.
 const iGa = (word) => {
   const code = String(word).charCodeAt(String(word).length - 1) - 0xac00;
@@ -64,7 +64,7 @@ export async function mainView(view) {
     </section>` : ''}
     <section>
       <div class="controls" role="toolbar" aria-label="품목 거르기">
-        ${['전체', '채소', '과일', '수산'].map((g) => `<button class="chip" data-group="${g}" aria-pressed="${mainState.group === g}">${g}</button>`).join('')}
+        ${['전체', '채소', '과일', '수산', '축산', '곡물'].map((g) => `<button class="chip" data-group="${g}" aria-pressed="${mainState.group === g}">${g}</button>`).join('')}
         <button class="chip" data-season aria-pressed="${mainState.seasonOnly}">제철만</button>
         <span class="spacer"></span>
         <select class="chip" data-sort aria-label="정렬">
@@ -208,7 +208,7 @@ export async function itemView(view, id, session) {
           <p class="origin-regions">${esc(item.main_region) || '정보 없음'}</p>
           ${item.places.provinces.length ? `<p class="origin-provinces">${item.places.provinces.map((p) => `<span class="badge">${esc(p)}</span>`).join(' ')}</p>` : ''}
           ${item.season_note ? `<p>${esc(item.season_note)}</p>` : ''}
-          ${item.story ? `<div class="origin-story"><h3>📖 산지 이야기</h3><p>${esc(item.story)}</p></div>` : ''}
+          ${item.story ? `<div class="origin-story"><h3>${item.story_kind === 'tip' ? '💡 알아두면 좋은 점' : '📖 산지 이야기'}</h3><p>${esc(item.story)}</p></div>` : ''}
           <p class="origin-months">제철: ${item.season_months.length ? item.season_months.map((m) => `${m}월`).join(' · ') : '연중'}</p>
         </div>
       </div>

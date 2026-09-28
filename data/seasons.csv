@@ -63,3 +63,35 @@ laver,11|12|1|2|3,완도·고흥,햇김은 겨울
 anchovy,3|4|5|9|10|11,남해·통영,
 seaweed,2|3|4,기장·완도,
 kelp,5|6|7,완도,
+rice,9|10|11,이천·철원·김제,햅쌀은 가을
+glutinous_rice,9|10|11,김제·당진,
+soybean,10|11,파주·안동,햇콩은 늦가을
+red_bean,10|11,진도·고창,
+mung_bean,8|9,전국,
+sesame,9|10,안동·의성,
+walnut,,수입,국산은 천안이 유명하지만 가격은 수입산 기준
+almond,,수입,
+banana,,수입,연중 수입
+pineapple,,수입,연중 수입
+orange,,수입,미국산은 봄 · 호주산은 가을
+lemon,,수입,연중 수입
+cherry,,수입,미국산은 초여름
+mango,,수입,
+avocado,,수입,연중 수입
+hanwoo_sirloin,,횡성·홍성·함평,1+등급 기준
+hanwoo_tenderloin,,횡성·홍성·함평,1+등급 기준
+hanwoo_brisket,,횡성·홍성·함평,1+등급 기준 · 국거리용
+hanwoo_rib,,횡성·홍성·함평,1+등급 기준
+pork_belly,,홍성·제주,
+pork_neck,,홍성·제주,
+pork_shoulder,,홍성·제주,
+pork_rib,,홍성·제주,
+us_beef_rib,,수입,미국산 기준
+import_pork_belly,,수입,
+chicken,,전국,육계 1kg 기준
+egg,,전국,특란 30구 기준
+dried_squid,,울릉도·속초,
+croaker_import,,수입,참조기와 닮은 수입 조기류
+salted_shrimp,6|9|10,강화·광천,6월 육젓 · 가을 추젓
+anchovy_sauce,,남해·통영,
+sea_salt,4|5|6,신안,봄 소금이 좋다
