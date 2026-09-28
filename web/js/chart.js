@@ -29,7 +29,7 @@ function shortDate(iso, withYear) {
   return withYear ? `${y.slice(2)}.${Number(m)}.${Number(d)}` : `${Number(m)}.${Number(d)}`;
 }
 
-export function renderTrendChart(container, points, { unit }) {
+export function renderTrendChart(container, points, { unit, priceLabel = '소매가', normalLabel = '평년가' }) {
   container.innerHTML = '';
   const data = points.filter((p) => p.price != null || p.normal_price != null);
   if (data.length < 2) {
@@ -37,11 +37,13 @@ export function renderTrendChart(container, points, { unit }) {
     return;
   }
 
+  // 평년가가 하나도 없으면(수산물 위판가 등) 그 선과 범례를 빼고 한 계열로 그린다.
+  const hasNormal = data.some((p) => p.normal_price != null);
   const legend = document.createElement('div');
   legend.className = 'legend';
   legend.innerHTML = `
-    <span><i style="border-color:var(--series-price)"></i>소매가 (${unit})</span>
-    <span><i class="dash" style="border-color:var(--series-normal)"></i>평년가</span>`;
+    <span><i style="border-color:var(--series-price)"></i>${priceLabel} (${unit})</span>
+    ${hasNormal ? `<span><i class="dash" style="border-color:var(--series-normal)"></i>${normalLabel}</span>` : ''}`;
   container.appendChild(legend);
 
   const wrap = document.createElement('div');
@@ -91,7 +93,7 @@ export function renderTrendChart(container, points, { unit }) {
 
   // 선 끝 직접 라벨 — 두 라벨이 겹치면 벌린다.
   const last = (key) => { for (let i = data.length - 1; i >= 0; i--) if (data[i][key] != null) return [i, data[i][key]]; return null; };
-  const ends = [['price', '소매가'], ['normal_price', '평년']].map(([key, name]) => {
+  const ends = [['price', priceLabel], ['normal_price', normalLabel.replace(/가$/, '')]].map(([key, name]) => {
     const found = last(key);
     return found && { key, name, i: found[0], v: found[1], ly: y(found[1]) };
   }).filter(Boolean);
@@ -129,8 +131,8 @@ export function renderTrendChart(container, points, { unit }) {
     });
     const gap = p.price != null && p.normal_price ? Math.round((p.price / p.normal_price - 1) * 1000) / 10 : null;
     tip.innerHTML = `<b>${p.date}</b><br>
-      <span class="sw" style="background:var(--series-price)"></span>소매가 ${won(p.price)}<br>
-      <span class="sw" style="background:var(--series-normal)"></span>평년가 ${won(p.normal_price)}
+      <span class="sw" style="background:var(--series-price)"></span>${priceLabel} ${won(p.price)}
+      ${hasNormal ? `<br><span class="sw" style="background:var(--series-normal)"></span>${normalLabel} ${won(p.normal_price)}` : ''}
       ${gap == null ? '' : `<br>평년 대비 ${gap > 0 ? '+' : ''}${gap}%`}`;
     tip.hidden = false;
     const px = (x(i) / W) * box.width;
@@ -160,10 +162,10 @@ export function renderTrendChart(container, points, { unit }) {
   details.className = 'table-view';
   const step = Math.max(1, Math.ceil(data.length / 30));
   const rows = data.filter((_, i) => i % step === 0 || i === data.length - 1)
-    .map((p) => `<tr><td>${p.date}</td><td class="right num">${won(p.price)}</td><td class="right num">${won(p.normal_price)}</td></tr>`)
+    .map((p) => `<tr><td>${p.date}</td><td class="right num">${won(p.price)}</td>${hasNormal ? `<td class="right num">${won(p.normal_price)}</td>` : ''}</tr>`)
     .join('');
   details.innerHTML = `<summary>표로 보기</summary><div class="table-scroll"><table>
-    <thead><tr><th>날짜</th><th class="right">소매가</th><th class="right">평년가</th></tr></thead>
+    <thead><tr><th>날짜</th><th class="right">${priceLabel}</th>${hasNormal ? `<th class="right">${normalLabel}</th>` : ''}</tr></thead>
     <tbody>${rows}</tbody></table></div>`;
   container.appendChild(details);
 }

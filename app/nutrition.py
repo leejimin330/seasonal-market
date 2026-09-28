@@ -26,13 +26,33 @@ SHOWN = [
 ]
 
 
+def _format(food_name: str, food: dict) -> dict:
+    return {
+        "food_name": food_name,
+        "values": [
+            {"key": key, "label": label, "unit": unit, "value": food.get(key)}
+            for key, label, unit in SHOWN
+            if food.get(key) is not None
+        ],
+    }
+
+
 class Nutrition:
-    def __init__(self, source: str, by_item: dict[str, dict]):
+    def __init__(self, source: str, by_item: dict[str, dict], foods: dict[str, dict] | None = None):
         self.source = source
         self.by_item = by_item
+        self.foods = foods or {}
 
     def get(self, item_id: str) -> dict | None:
         return self.by_item.get(item_id)
+
+    def lookup(self, name: str) -> dict | None:
+        """이름으로 "(이름), 생것"을 찾는다. 수산물 위판 어종처럼 연결표가 없는 것에 쓴다."""
+        clean = name.split("(")[0].strip()
+        for candidate in (f"{clean}, 생것", clean):
+            if candidate in self.foods:
+                return _format(candidate, self.foods[candidate])
+        return None
 
 
 def load_nutrition(data_dir: Path) -> Nutrition:
@@ -47,12 +67,5 @@ def load_nutrition(data_dir: Path) -> Nutrition:
             food = foods.get(row["food_name"])
             if not food:
                 continue  # 식품명이 DB에서 바뀌었으면 조용히 뺀다 — 화면은 영양 칸 없이 뜬다
-            by_item[row["item_id"]] = {
-                "food_name": row["food_name"],
-                "values": [
-                    {"key": key, "label": label, "unit": unit, "value": food.get(key)}
-                    for key, label, unit in SHOWN
-                    if food.get(key) is not None
-                ],
-            }
-    return Nutrition(f"{payload.get('source', '')}, {payload.get('fetched', '')} 기준", by_item)
+            by_item[row["item_id"]] = _format(row["food_name"], food)
+    return Nutrition(f"{payload.get('source', '')}, {payload.get('fetched', '')} 기준", by_item, foods)

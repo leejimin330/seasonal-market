@@ -66,6 +66,31 @@ CREATE TABLE IF NOT EXISTS price_breakdown (
     PRIMARY KEY (item_id, date)
 );
 
+-- 수산물 산지 위판가: 어종 × 상태 × 날짜 합계. regions/market_prices는 {이름: [금액, 중량]} JSON.
+CREATE TABLE IF NOT EXISTS fish_daily (
+    code          TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    date          TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    amount        INTEGER NOT NULL,
+    weight        REAL NOT NULL,
+    n             INTEGER NOT NULL,
+    markets       INTEGER NOT NULL,
+    min_kg        INTEGER,
+    max_kg        INTEGER,
+    regions       TEXT NOT NULL,
+    market_prices TEXT NOT NULL,
+    PRIMARY KEY (code, state, date)
+);
+CREATE INDEX IF NOT EXISTS idx_fish_date ON fish_daily(date);
+
+-- 위판 자료를 받은 날. 기록이 0건인 날(휴장)도 남겨 다시 받지 않게 한다.
+CREATE TABLE IF NOT EXISTS fish_days (
+    date       TEXT PRIMARY KEY,
+    rows       INTEGER NOT NULL,
+    fetched_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -305,6 +330,45 @@ class Database:
     def delete_breakdowns(self, source: str) -> None:
         with self.transaction() as conn:
             conn.execute("DELETE FROM price_breakdown WHERE source = ?", (source,))
+
+    # ── 수산물 산지 위판가 ──────────────────────────────────
+
+    def fish_days(self) -> set[str]:
+        return {row["date"] for row in self._query("SELECT date FROM fish_days")}
+
+    def put_fish_day(self, day: str, groups: list[dict], rows: int, now: float) -> None:
+        with self.transaction() as conn:
+            conn.execute("DELETE FROM fish_daily WHERE date = ?", (day,))
+            conn.executemany(
+                "INSERT INTO fish_daily (code, state, date, name, amount, weight, n, markets, min_kg, max_kg,"
+                " regions, market_prices) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (g["code"], g["state"], day, g["name"], g["amount"], g["weight"], g["n"], g["markets"],
+                     g["min_kg"], g["max_kg"], json.dumps(g["regions"], ensure_ascii=False),
+                     json.dumps(g["market_prices"], ensure_ascii=False))
+                    for g in groups
+                ],
+            )
+            conn.execute("INSERT OR REPLACE INTO fish_days (date, rows, fetched_at) VALUES (?, ?, ?)",
+                         (day, rows, now))
+
+    def fish_rows(self, since: str, code: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM fish_daily WHERE date >= ?"
+        params: tuple = (since,)
+        if code:
+            sql += " AND code = ?"
+            params += (code,)
+        rows = []
+        for row in self._query(sql + " ORDER BY date", params):
+            item = dict(row)
+            item["regions"] = json.loads(item["regions"])
+            item["market_prices"] = json.loads(item["market_prices"])
+            rows.append(item)
+        return rows
+
+    def fish_latest_date(self) -> str | None:
+        rows = self._query("SELECT MAX(date) AS date FROM fish_daily")
+        return rows[0]["date"] if rows else None
 
     def get_meta(self, key: str) -> str | None:
         rows = self._query("SELECT value FROM meta WHERE key = ?", (key,))

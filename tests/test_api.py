@@ -1,3 +1,5 @@
+import shutil
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,13 +14,24 @@ class Clock:
         return self.now
 
 
-@pytest.fixture
-def app_and_client():
-    clock = Clock()
-    app = create_app(db_path=":memory:", admins=frozenset({"boss"}), secret="s", clock=clock,
-                     run_scheduler=False)
+@pytest.fixture(scope="session")
+def priced_db(tmp_path_factory):
+    """샘플 가격(품목 60여 개 × 5년)을 한 번만 만들어 둔다. 테스트마다 만들면 몇 분이 걸린다."""
+    path = tmp_path_factory.mktemp("db") / "template.db"
+    app = create_app(db_path=str(path), secret="s", clock=Clock(), run_scheduler=False)
     app.state.prices.collect()
     app.state.prices.collect_history()
+    app.state.db.close()
+    return path
+
+
+@pytest.fixture
+def app_and_client(priced_db, tmp_path):
+    db_path = tmp_path / "test.db"
+    shutil.copyfile(priced_db, db_path)
+    clock = Clock()
+    app = create_app(db_path=str(db_path), admins=frozenset({"boss"}), secret="s", clock=clock,
+                     run_scheduler=False)
     return app, TestClient(app), clock
 
 

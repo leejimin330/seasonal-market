@@ -22,6 +22,7 @@ from app.credits import LocalCredits
 from app.db import Database
 from app.nutrition import load_nutrition
 from app.places import load_places
+from app.wipan import FishQueries, FishService, WipanClient
 from app.atprice import AtClient
 from app.prices import PriceService
 from app.routes import router
@@ -47,6 +48,7 @@ def create_app(
     db_path: str = config.DB_PATH,
     data_dir: Path = config.DATA_DIR,
     at: AtClient | None = None,
+    wipan: WipanClient | None = None,
     admins: frozenset[str] = config.ADMIN_USERS,
     secret: str | None = None,
     clock=time.time,
@@ -55,13 +57,14 @@ def create_app(
     db = Database(db_path)
     catalog = load_catalog(data_dir)
     prices = PriceService(db, catalog, at, clock=clock)
+    fish = FishService(db, wipan, clock=clock)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         task = None
         if run_scheduler:
             task = asyncio.create_task(
-                run_daily(prices, db, hour=config.COLLECT_HOUR, backup_dir=data_dir / "backups")
+                run_daily(prices, db, hour=config.COLLECT_HOUR, backup_dir=data_dir / "backups", fish=fish)
             )
         yield
         if task:
@@ -74,6 +77,8 @@ def create_app(
     state.catalog = catalog
     state.nutrition = load_nutrition(data_dir)
     state.places = load_places(data_dir)
+    state.fish = fish
+    state.fish_queries = FishQueries(db, state.nutrition)
     state.prices = prices
     state.credits = LocalCredits(
         db,
@@ -108,7 +113,9 @@ def create_app(
 def build_default_app() -> FastAPI:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     at = AtClient(config.DATA_GO_KR_KEY) if config.at_enabled() else None
-    return create_app(at=at)
+    # 위판 API도 같은 공공데이터포털 키를 쓴다 (활용신청은 따로 해야 한다).
+    wipan = WipanClient(config.DATA_GO_KR_KEY) if config.at_enabled() else None
+    return create_app(at=at, wipan=wipan)
 
 
 

@@ -158,6 +158,20 @@ def trend(request: Request, item_id: str):
     return {"series": series, "price_unit": item.price_unit}
 
 
+@router.get("/fish")
+def fish_species(request: Request):
+    """수산물 산지 위판가 — 어종 목록. 무료."""
+    return request.app.state.fish_queries.species()
+
+
+@router.get("/fish/{code}")
+def fish_detail(request: Request, code: str, state: str | None = None):
+    detail = request.app.state.fish_queries.detail(code, state)
+    if detail is None:
+        raise HTTPException(404, "이 어종은 위판 기록이 없습니다.")
+    return detail
+
+
 # ── 유료 ────────────────────────────────────────────────────
 
 @router.post("/items/{item_id}/where")

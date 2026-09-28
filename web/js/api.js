@@ -36,6 +36,8 @@ export const api = {
   item: (id) => request('GET', `/items/${encodeURIComponent(id)}`),
   trend: (id) => request('GET', `/items/${encodeURIComponent(id)}/trend`),
   where: (id) => request('POST', `/items/${encodeURIComponent(id)}/where`),
+  fish: () => request('GET', '/fish'),
+  fishDetail: (code, state) => request('GET', `/fish/${encodeURIComponent(code)}${state ? `?state=${encodeURIComponent(state)}` : ''}`),
   me: () => request('GET', '/me'),
   ledger: () => request('GET', '/me/ledger'),
   signup: (user_id, password) => request('POST', '/signup', { user_id, password }),

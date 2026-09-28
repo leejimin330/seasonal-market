@@ -40,26 +40,33 @@ def backup_database(db, backup_dir: Path, now: datetime) -> Path | None:
     return target
 
 
-async def run_daily(prices, db, *, hour: int, backup_dir: Path, clock=time.time) -> None:
+async def run_daily(prices, db, *, hour: int, backup_dir: Path, clock=time.time, fish=None) -> None:
     # 켜자마자 한 번. 처음 켤 때는 이게 1년치 거꾸로 채우기다.
-    await _collect_once(prices)
+    await _collect_once(prices, fish)
     while True:
         now = datetime.fromtimestamp(clock(), config.KST)
         await asyncio.sleep(seconds_until(hour, now))
-        await _collect_once(prices)
+        await _collect_once(prices, fish)
         try:
             await asyncio.to_thread(backup_database, db, backup_dir, datetime.now(config.KST))
         except Exception:
             log.exception("DB 백업 실패")
 
 
-async def _collect_once(prices) -> None:
+async def _collect_once(prices, fish=None) -> None:
+    """화면에 바로 쓰이는 것(최근 소매가, 위판가)을 먼저 받고, 오래 걸리는 과거 자료는 마지막에."""
     try:
         result = await asyncio.to_thread(prices.collect)
         log.info("가격 수집 완료: %s", result)
     except Exception:
         # 수집이 실패해도 서버는 마지막 데이터로 계속 돈다. 화면에 기준일이 찍힌다.
         log.exception("가격 수집 실패")
+    if fish is not None and fish.enabled:
+        try:
+            result = await asyncio.to_thread(fish.collect)
+            log.info("수산물 위판 수집: %s", result)
+        except Exception:
+            log.exception("수산물 위판 수집 실패")
     try:
         # 평년가용 과거 데이터. 이미 받은 품목은 건너뛰어서 두 번째부터는 금방 끝난다.
         result = await asyncio.to_thread(prices.collect_history)

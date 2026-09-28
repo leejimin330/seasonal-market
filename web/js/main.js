@@ -4,7 +4,7 @@
 //   #/login, #/signup, #/me, #/admin
 
 import { api } from './api.js';
-import { adminView, authView, itemView, mainView, meView } from './views.js';
+import { adminView, authView, fishDetailView, fishListView, itemView, mainView, meView } from './views.js';
 
 const view = document.getElementById('view');
 const nav = document.getElementById('topnav');
@@ -41,8 +41,9 @@ const session = {
 };
 
 function drawNav() {
+  const fishLink = '<a href="#/fish">🐟 수산물 시세</a>';
   if (session.user) {
-    nav.innerHTML = `
+    nav.innerHTML = `${fishLink}
       ${session.isAdmin ? '<a href="#/admin">관리자</a>' : ''}
       <a class="credit-pill num" href="#/me" title="내 크레딧">🪙 ${session.credits}</a>
       <button type="button" data-logout>로그아웃</button>`;
@@ -53,7 +54,7 @@ function drawNav() {
       route();
     });
   } else {
-    nav.innerHTML = '<a href="#/login">로그인</a><a class="credit-pill" href="#/signup">가입하고 크레딧 받기</a>';
+    nav.innerHTML = `${fishLink}<a href="#/login">로그인</a><a class="credit-pill" href="#/signup">가입하고 크레딧 받기</a>`;
   }
 }
 
@@ -78,6 +79,8 @@ async function route() {
   window.scrollTo(0, 0);
   try {
     if (parts[0] === 'item' && parts[1]) await itemView(view, decodeURIComponent(parts[1]), session);
+    else if (parts[0] === 'fish' && parts[1]) await fishDetailView(view, decodeURIComponent(parts[1]), params.get('state'));
+    else if (parts[0] === 'fish') await fishListView(view);
     else if (parts[0] === 'login' || parts[0] === 'signup') authView(view, parts[0], session, params.get('next'));
     else if (parts[0] === 'me') await meView(view, session);
     else if (parts[0] === 'admin') await adminView(view, session);

@@ -314,7 +314,7 @@ function renderTrend(body, data) {
   const draw = (days) => {
     const last = data.series[data.series.length - 1]?.date;
     const since = new Date(new Date(last).getTime() - days * 86400000).toISOString().slice(0, 10);
-    renderTrendChart(chart, data.series.filter((p) => p.date >= since), { unit: data.price_unit });
+    renderTrendChart(chart, data.series.filter((p) => p.date >= since), { unit: data.price_unit, priceLabel: data.priceLabel });
   };
   let days = 28;
   body.querySelectorAll('[data-days]').forEach((b) => b.addEventListener('click', () => {
@@ -361,6 +361,140 @@ function renderWhere(body, data) {
         <li><span>${esc(name)}</span><span class="num">${won(r.avg)} <small>(${r.n}곳)</small></span></li>`).join('')}
     </ol>
     <p class="fineprint">${esc(data.date)} 한국농수산식품유통공사(aT) 소매가격 조사 기준, 조사처 ${data.n}곳. 조사처 이름은 aT가 익명으로 공개해서 유형까지만 보여드려요.</p>`;
+}
+
+// ── 수산물 산지 시세 ─────────────────────────────────────────
+
+const fishState = { query: '', state: '전체', sort: 'weight' };
+const STATE_CHIPS = ['전체', '활어', '선어', '냉동', '건어'];
+const changeBadge = (pct) => (pct == null ? '<span class="delta flat">비교 자료 없음</span>'
+  : Math.abs(pct) < 1 ? '<span class="delta flat">지난주와 비슷</span>'
+    : pct < 0 ? `<span class="delta down">▼ 지난주보다 ${Math.abs(pct)}%</span>`
+      : `<span class="delta up">▲ 지난주보다 ${pct}%</span>`);
+
+export async function fishListView(view) {
+  view.innerHTML = '<p class="empty">불러오는 중…</p>';
+  const { latest, species } = await api.fish();
+  if (!latest) {
+    view.innerHTML = `<h1 class="page-title">수산물 산지 시세</h1>
+      <p class="empty">아직 위판 자료를 받는 중이에요. 잠시 후 다시 열어 주세요.</p>`;
+    return;
+  }
+  view.innerHTML = `
+    <section class="page-head">
+      <div class="eyebrow">전국 수협 위판장 · ${esc(latest)} 기준 최근 7일</div>
+      <h1 class="page-title">수산물 산지 시세 <small>${species.length}종</small></h1>
+      <p class="page-desc">어민이 위판장 경매에서 판 kg당 가격이에요. 마트 소매가보다 훨씬 싸고, 유통을 거치며 값이 붙어요.<br>
+        쥐치·쏨뱅이·물메기처럼 마트 조사에 없는 어종도 여기서 볼 수 있어요.</p>
+    </section>
+    <div class="controls">
+      <input class="search" type="search" placeholder="어종 검색 (예: 쥐치, 볼락)" value="${esc(fishState.query)}" aria-label="어종 검색">
+      ${STATE_CHIPS.map((s) => `<button class="chip" data-state="${s}" aria-pressed="${fishState.state === s}">${s}</button>`).join('')}
+      <span class="spacer"></span>
+      <select class="chip" data-sort aria-label="정렬">
+        <option value="weight">거래량 많은 순</option>
+        <option value="down">지난주보다 내린 순</option>
+        <option value="up">지난주보다 오른 순</option>
+        <option value="name">이름순</option>
+      </select>
+    </div>
+    <div class="grid" id="fish-grid"></div>
+    <p class="fineprint">출처: 해양수산부 위판장별 위탁판매 현황 (공공데이터포털). 한 주 거래가 5kg 미만인 어종은 가격이 튀어서 뺐어요.</p>`;
+  view.querySelector('[data-sort]').value = fishState.sort;
+
+  const grid = view.querySelector('#fish-grid');
+  const draw = () => {
+    const q = fishState.query.trim();
+    const list = species.filter((s) => (fishState.state === '전체' || s.state === fishState.state) && (!q || s.name.includes(q)));
+    // 변동률이 없는 어종은 어느 정렬에서든 뒤로 보낸다.
+    const byChange = (sign) => (a, b) => (a.change == null) - (b.change == null) || (a.change - b.change) * sign;
+    list.sort({
+      weight: (a, b) => b.weight - a.weight,
+      down: byChange(1),
+      up: byChange(-1),
+      name: (a, b) => a.name.localeCompare(b.name, 'ko'),
+    }[fishState.sort]);
+    grid.innerHTML = list.length ? list.map((s) => `
+      <a class="card" href="#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}">
+        <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
+        <div class="price num">${won(s.kg)}<small>/ kg</small></div>
+        <div class="card-foot"><span>${esc(s.regions.join('·'))}</span>${changeBadge(s.change)}</div>
+        <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 위판장 ${s.markets}곳</div>
+      </a>`).join('') : '<p class="empty">조건에 맞는 어종이 없어요.</p>';
+  };
+  draw();
+  view.querySelector('.search').addEventListener('input', (e) => { fishState.query = e.target.value; draw(); });
+  view.querySelectorAll('[data-state]').forEach((b) => b.addEventListener('click', () => {
+    fishState.state = b.dataset.state;
+    view.querySelectorAll('[data-state]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    draw();
+  }));
+  view.querySelector('[data-sort]').addEventListener('change', (e) => { fishState.sort = e.target.value; draw(); });
+}
+
+export async function fishDetailView(view, code, state) {
+  view.innerHTML = '<p class="empty">불러오는 중…</p>';
+  let d;
+  try {
+    d = await api.fishDetail(code, state);
+  } catch (err) {
+    view.innerHTML = `<a class="back" href="#/fish">← 수산물 시세</a><p class="empty">${esc(err.message)}</p>`;
+    return;
+  }
+  const provinces = d.regions.map((r) => r.name);
+  const maxRegion = Math.max(...d.regions.map((r) => r.weight), 1);
+  const searchName = encodeURIComponent(d.name.split('(')[0]);
+  view.innerHTML = `
+    <a class="back" href="#/fish">← 수산물 시세</a>
+    <section class="detail-head">
+      <div>
+        <h1>${esc(d.name)}</h1>
+        <div class="detail-meta">
+          ${d.states.map((s) => `<a class="chip" href="#/fish/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}">${esc(s)}</a>`).join(' ')}
+        </div>
+      </div>
+      <div class="now-box">
+        <div class="label">산지 위판가 · 최근 7일 평균 (${esc(d.latest)}까지)</div>
+        <div class="price num">${won(d.kg)}<small>/ kg</small></div>
+        <div class="card-sub num">거래 ${d.weight.toLocaleString('ko-KR')}kg · 낙찰가 ${won(d.min_kg)} ~ ${won(d.max_kg)}</div>
+      </div>
+    </section>
+    <div class="shop-links">
+      <span class="shop-links-title">사러 가기</span>
+      ${SHOPS.map(([name, url]) => `<a class="shop-link" href="${url(searchName)}" target="_blank" rel="noopener noreferrer">${name} ↗</a>`).join('')}
+    </div>
+    <section class="panel origin">
+      <div class="panel-head"><h2>어디서 잡혔나</h2><span class="unlock-note">최근 7일 위판량 기준</span></div>
+      <div class="origin-body">
+        <div class="origin-map" id="origin-map"></div>
+        <div class="origin-info">
+          <ul class="rank-list">
+            ${d.regions.slice(0, 6).map((r, n) => `
+              <li class="${n === 0 ? 'best' : ''}">
+                <span class="rank-name">${esc(r.name)}</span>
+                <span class="bar" aria-hidden="true"><i style="width:${Math.max(4, Math.round((r.weight / maxRegion) * 100))}%"></i></span>
+                <span class="rank-value num"><b>${r.weight.toLocaleString('ko-KR')}kg</b><small>${won(r.kg)}/kg</small></span>
+              </li>`).join('')}
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section class="panel" id="fish-trend"></section>
+    ${d.markets.length ? `
+    <section class="panel">
+      <div class="panel-head"><h2>위판장별 가격</h2><span class="unlock-note">최근 7일 · kg당 싼 순</span></div>
+      <ol class="region-list">
+        ${d.markets.map((m) => `<li><span>${esc(m.name)}</span> <span class="num">${won(m.kg)}/kg <small>(${m.weight.toLocaleString('ko-KR')}kg)</small></span></li>`).join('')}
+      </ol>
+    </section>` : ''}
+    ${d.nutrition ? nutritionPanel({ nutrition: d.nutrition, nutrition_source: '식품의약품안전처 식품영양성분DB (100g 기준)' }) : ''}
+    <p class="fineprint">출처: 해양수산부 위판장별 위탁판매 현황 (공공데이터포털). 위판가는 산지 경매가라 소매가와 다릅니다.</p>`;
+
+  renderKoreaMap(view.querySelector('#origin-map'), { points: [], provinces })
+    .catch(() => { view.querySelector('#origin-map').innerHTML = ''; });
+  const trend = view.querySelector('#fish-trend');
+  trend.innerHTML = '<div class="panel-head"><h2>산지 가격 추이</h2></div><div data-body></div>';
+  renderTrend(trend.querySelector('[data-body]'), { series: d.series, price_unit: 'kg', priceLabel: '산지 위판가' });
 }
 
 // ── 로그인 / 가입 ────────────────────────────────────────────
