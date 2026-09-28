@@ -21,6 +21,7 @@ from app.catalog import load_catalog
 from app.credits import LocalCredits
 from app.db import Database
 from app.nutrition import load_nutrition
+from app.places import load_places
 from app.atprice import AtClient
 from app.prices import PriceService
 from app.routes import router
@@ -72,6 +73,7 @@ def create_app(
     state.db = db
     state.catalog = catalog
     state.nutrition = load_nutrition(data_dir)
+    state.places = load_places(data_dir)
     state.prices = prices
     state.credits = LocalCredits(
         db,

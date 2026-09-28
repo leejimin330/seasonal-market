@@ -152,3 +152,10 @@ def test_item_detail_has_nutrition_and_tips(app_and_client):
     values = {v["key"]: v["value"] for v in detail["nutrition"]["values"]}
     assert values["kcal"] == 183.0 and values["protein"] == 20.2
     assert "식품의약품안전처" in detail["nutrition_source"]
+
+
+def test_item_detail_resolves_origin_places(app_and_client):
+    _, client, _ = app_and_client
+    places = client.get("/api/items/cabbage").json()["places"]
+    assert {p["name"] for p in places["points"]} == {"해남", "괴산"}
+    assert places["provinces"] == ["전라남도", "충청북도"]

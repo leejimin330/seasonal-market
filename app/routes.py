@@ -141,6 +141,7 @@ def item_detail(request: Request, item_id: str, user_id: str | None = Depends(op
         "pick": item.pick,
         "store": item.store,
         "nutrition": state.nutrition.get(item.id),
+        "places": state.places.resolve(item.main_region),
         "nutrition_source": state.nutrition.source,
         "access": _access(request, user_id, item.id),
     }

@@ -3,6 +3,7 @@
 import { api, ApiError } from './api.js';
 import { carousel } from './carousel.js';
 import { renderTrendChart } from './chart.js';
+import { renderKoreaMap } from './koreamap.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (v) => (v == null ? '—' : `${v.toLocaleString('ko-KR')}원`);
@@ -199,6 +200,19 @@ export async function itemView(view, id, session) {
       ${SHOPS.map(([name, url]) => `<a class="shop-link" href="${url(encodeURIComponent(item.name))}" target="_blank" rel="noopener noreferrer">${name} ↗</a>`).join('')}
       <span class="unlock-note">각 쇼핑몰의 "${esc(item.name)}" 검색 결과로 이동해요.</span>
     </section>
+    <section class="panel origin">
+      <div class="panel-head"><h2>주산지</h2></div>
+      <div class="origin-body">
+        <div class="origin-map" id="origin-map" aria-busy="true"></div>
+        <div class="origin-info">
+          <p class="origin-regions">${esc(item.main_region) || '정보 없음'}</p>
+          ${item.places.provinces.length ? `<p class="origin-provinces">${item.places.provinces.map((p) => `<span class="badge">${esc(p)}</span>`).join(' ')}</p>` : ''}
+          ${item.season_note ? `<p>${esc(item.season_note)}</p>` : ''}
+          <p class="origin-months">제철: ${item.season_months.length ? item.season_months.map((m) => `${m}월`).join(' · ') : '연중'}</p>
+        </div>
+      </div>
+      <p class="fineprint">지도: 통계청 센서스용 행정구역경계(2013). 점은 주요 산지의 대략적인 위치예요.</p>
+    </section>
     <section class="panel" id="trend-panel"></section>
     ${item.pick || item.store ? `
     <section class="tips">
@@ -207,6 +221,10 @@ export async function itemView(view, id, session) {
     </section>` : ''}
     ${item.nutrition ? nutritionPanel(item) : ''}
     <section class="panel" id="where-panel"></section>`;
+
+  renderKoreaMap(view.querySelector('#origin-map'), item.places)
+    .catch(() => { view.querySelector('#origin-map').innerHTML = '<p class="empty">지도를 불러오지 못했어요.</p>'; })
+    .finally(() => view.querySelector('#origin-map')?.removeAttribute('aria-busy'));
 
   setupFree(view.querySelector('#trend-panel'), {
     title: '가격 변동 추이',
