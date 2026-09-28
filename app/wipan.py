@@ -237,12 +237,55 @@ def _merge(rows: list[dict], field: str) -> list[dict]:
     return [{"name": name, "kg": _kg(a, w), "weight": round(w, 1)} for name, (a, w) in total.items() if w > 0]
 
 
+PEAK_SHARE = 0.5  # 가장 많이 잡힌 달의 절반 이상이면 "주로 잡히는 달"로 본다
+
+
+def _peak_months(weight_by_month: dict[int, float]) -> list[int]:
+    if not weight_by_month:
+        return []
+    top = max(weight_by_month.values())
+    return sorted(m for m, w in weight_by_month.items() if w >= top * PEAK_SHARE)
+
+
+def _history(totals: list[dict]) -> dict[tuple, dict]:
+    """전체 기간 합계로 어종 × 상태마다 마지막 거래, 그 주의 가격, 달별 거래량을 낸다."""
+    grouped: dict[tuple, list[dict]] = defaultdict(list)
+    for row in totals:
+        if "기타" not in row["name"]:
+            grouped[(row["code"], row["state"])].append(row)
+    result = {}
+    for key, rows in grouped.items():
+        last = rows[-1]["date"]
+        last_week_start = (date.fromisoformat(last) - timedelta(days=6)).isoformat()
+        last_week = [r for r in rows if r["date"] >= last_week_start]
+        by_month: dict[int, float] = defaultdict(float)
+        for r in rows:
+            by_month[int(r["date"][5:7])] += r["weight"]
+        la, lw = _sum(last_week)
+        result[key] = {
+            "name": rows[-1]["name"], "last_date": last, "last_kg": _kg(la, lw),
+            "total_weight": round(sum(r["weight"] for r in rows)),
+            "peak_months": _peak_months(by_month),
+        }
+    return result
+
+
+def _months_covered(db) -> int:
+    """받은 위판 자료가 몇 달에 걸쳐 있나. "주로 잡히는 달"이 몇 달 자료로 계산됐는지 알려주려고."""
+    days = sorted(db.fish_days())
+    if not days:
+        return 0
+    first, last = date.fromisoformat(days[0]), date.fromisoformat(days[-1])
+    return (last.year - first.year) * 12 + last.month - first.month + 1
+
+
 class FishQueries:
     """화면용 요약. 최신 날짜 기준 최근 7일과 그 전 7일을 비교한다."""
 
     def __init__(self, db, nutrition=None):
         self.db = db
         self.nutrition = nutrition
+        self._cache = None
 
     def _windows(self) -> tuple[str, str, str] | None:
         latest = self.db.fish_latest_date()
@@ -252,10 +295,20 @@ class FishQueries:
         return latest, (d - timedelta(days=6)).isoformat(), (d - timedelta(days=13)).isoformat()
 
     def species(self) -> dict:
+        """받은 자료가 바뀌지 않았으면 지난번 결과를 그대로 준다 — 전체 기간을 훑어서 무겁다."""
+        stamp = (self.db.fish_day_count(), self.db.fish_latest_date())
+        if self._cache and self._cache[0] == stamp:
+            return self._cache[1]
+        result = self._species()
+        self._cache = (stamp, result)
+        return result
+
+    def _species(self) -> dict:
         windows = self._windows()
         if not windows:
-            return {"latest": None, "species": []}
+            return {"latest": None, "species": [], "quiet": [], "months_covered": 0}
         latest, week_start, prev_start = windows
+        history = _history(self.db.fish_totals())
         by_key: dict[tuple, list[dict]] = defaultdict(list)
         for row in self.db.fish_rows(prev_start):
             if "기타" in row["name"]:
@@ -277,9 +330,19 @@ class FishQueries:
                 "change": round((kg / prev_kg - 1) * 100, 1) if prev_kg else None,
                 "weight": round(ww), "markets": max(r["markets"] for r in week),
                 "regions": [r["name"] for r in regions[:2]],
+                "peak_months": history.get((code, state), {}).get("peak_months", []),
             })
         result.sort(key=lambda s: -s["weight"])
-        return {"latest": latest, "species": result}
+
+        # 지금은 목록 기준(최근 7일 5kg)에 못 미치지만 받은 자료에 나온 적이 있는 어종.
+        active = {(s["code"], s["state"]) for s in result}
+        quiet = [
+            {"code": code, "state": state, **info}
+            for (code, state), info in history.items()
+            if (code, state) not in active and info["total_weight"] >= MIN_WEEK_WEIGHT
+        ]
+        quiet.sort(key=lambda s: s["last_date"], reverse=True)
+        return {"latest": latest, "species": result, "quiet": quiet, "months_covered": _months_covered(self.db)}
 
     def detail(self, code: str, state: str | None = None) -> dict | None:
         rows = self.db.fish_rows("0000-00-00", code)
@@ -308,5 +371,8 @@ class FishQueries:
                         "normal_price": None} for r in rows],
             "regions": regions,
             "markets": markets[:8],
+            "peak_months": _history([r for r in rows])[(code, state)]["peak_months"],
+            "months_covered": _months_covered(self.db),
+            "is_quiet": (date.fromisoformat(self.db.fish_latest_date()) - date.fromisoformat(latest)).days > 7,
             "nutrition": self.nutrition.lookup(name) if self.nutrition else None,
         }

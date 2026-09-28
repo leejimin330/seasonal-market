@@ -380,9 +380,19 @@ const changeBadge = (pct) => (pct == null ? '<span class="delta flat">비교 자
     : pct < 0 ? `<span class="delta down">▼ 지난주보다 ${Math.abs(pct)}%</span>`
       : `<span class="delta up">▲ 지난주보다 ${pct}%</span>`);
 
+// 1~12월 중 주로 잡히는 달을 칠한 작은 막대. 제목(title)에 달 이름을 적어 색만으로 전달하지 않는다.
+function monthStrip(months) {
+  if (!months || !months.length) return '';
+  const on = new Set(months);
+  return `<div class="month-strip" title="주로 잡히는 달: ${months.map((m) => `${m}월`).join(', ')}" aria-label="주로 잡히는 달: ${months.map((m) => `${m}월`).join(', ')}">
+    ${Array.from({ length: 12 }, (_, i) => `<i class="${on.has(i + 1) ? 'on' : ''}"></i>`).join('')}
+    <span>${months.length <= 4 ? months.map((m) => `${m}월`).join('·') : `${months[0]}~${months[months.length - 1]}월 중`}</span>
+  </div>`;
+}
+
 export async function fishListView(view) {
   view.innerHTML = '<p class="empty">불러오는 중…</p>';
-  const { latest, species } = await api.fish();
+  const { latest, species, quiet, months_covered: covered } = await api.fish();
   if (!latest) {
     view.innerHTML = `<h1 class="page-title">수산물 산지 시세</h1>
       <p class="empty">아직 위판 자료를 받는 중이에요. 잠시 후 다시 열어 주세요.</p>`;
@@ -391,7 +401,7 @@ export async function fishListView(view) {
   view.innerHTML = `
     <section class="page-head">
       <div class="eyebrow">전국 수협 위판장 · ${esc(latest)} 기준 최근 7일</div>
-      <h1 class="page-title">수산물 산지 시세 <small>${species.length}종</small></h1>
+      <h1 class="page-title">수산물 산지 시세 <small>지금 거래 중 ${species.length} · 뜸한 어종 ${quiet.length}</small></h1>
       <p class="page-desc">어민이 위판장 경매에서 판 kg당 가격이에요. 마트 소매가보다 훨씬 싸고, 유통을 거치며 값이 붙어요.<br>
         쥐치·쏨뱅이·물메기처럼 마트 조사에 없는 어종도 여기서 볼 수 있어요.</p>
     </section>
@@ -407,10 +417,14 @@ export async function fishListView(view) {
       </select>
     </div>
     <div class="grid" id="fish-grid"></div>
+    <h2 class="section-title quiet-title">요즘 거래가 뜸한 어종 <small>최근 7일 거래가 적거나 없어요 · 마지막 거래일 순</small></h2>
+    <div class="grid" id="quiet-grid"></div>
+    <p class="fineprint">"주로 잡히는 달"은 받아 둔 ${covered}개월 치 위판 자료로 계산했어요. 1년치가 쌓이면 더 정확해져요.</p>
     <p class="fineprint">출처: 해양수산부 위판장별 위탁판매 현황 (공공데이터포털). 한 주 거래가 5kg 미만인 어종은 가격이 튀어서 뺐어요.</p>`;
   view.querySelector('[data-sort]').value = fishState.sort;
 
   const grid = view.querySelector('#fish-grid');
+  const quietGrid = view.querySelector('#quiet-grid');
   const draw = () => {
     const q = fishState.query.trim();
     const list = species.filter((s) => (fishState.state === '전체' || s.state === fishState.state) && (!q || s.name.includes(q)));
@@ -428,7 +442,18 @@ export async function fishListView(view) {
         <div class="price num">${won(s.kg)}<small>/ kg</small></div>
         <div class="card-foot"><span>${esc(s.regions.map(shortProvince).join('·'))}</span>${changeBadge(s.change)}</div>
         <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 위판장 ${s.markets}곳</div>
+        ${monthStrip(s.peak_months)}
       </a>`).join('') : '<p class="empty">조건에 맞는 어종이 없어요.</p>';
+
+    const quietList = quiet.filter((s) => (fishState.state === '전체' || s.state === fishState.state) && (!q || s.name.includes(q)));
+    if (fishState.sort === 'name') quietList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    quietGrid.innerHTML = quietList.length ? quietList.map((s) => `
+      <a class="card quiet" href="#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}">
+        <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
+        <div class="price num">${won(s.last_kg)}<small>/ kg</small></div>
+        <div class="card-sub">마지막 거래 ${esc(s.last_date)} · 그 주 평균</div>
+        ${monthStrip(s.peak_months)}
+      </a>`).join('') : '<p class="empty">없어요.</p>';
   };
   draw();
   view.querySelector('.search').addEventListener('input', (e) => { fishState.query = e.target.value; draw(); });
@@ -462,11 +487,16 @@ export async function fishDetailView(view, code, state) {
         </div>
       </div>
       <div class="now-box">
-        <div class="label">산지 위판가 · 최근 7일 평균 (${esc(d.latest)}까지)</div>
+        <div class="label">${d.is_quiet ? '요즘 거래가 뜸해요 · 마지막 거래 주 평균' : '산지 위판가 · 최근 7일 평균'} (${esc(d.latest)}까지)</div>
         <div class="price num">${won(d.kg)}<small>/ kg</small></div>
         <div class="card-sub num">거래 ${d.weight.toLocaleString('ko-KR')}kg · 낙찰가 ${won(d.min_kg)} ~ ${won(d.max_kg)}</div>
       </div>
     </section>
+    ${d.peak_months.length ? `
+    <div class="months" aria-label="주로 잡히는 달">
+      ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<span class="${d.peak_months.includes(m) ? 'on' : ''}">${m}월</span>`).join('')}
+    </div>
+    <p class="fineprint" style="margin:-16px 0 16px">주로 잡히는 달 — 받아 둔 ${d.months_covered}개월 치 위판량 기준</p>` : ''}
     <div class="shop-links">
       <span class="shop-links-title">사러 가기</span>
       ${SHOPS.map(([name, url]) => `<a class="shop-link" href="${url(searchName)}" target="_blank" rel="noopener noreferrer">${name} ↗</a>`).join('')}

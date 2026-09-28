@@ -75,3 +75,27 @@ def test_aggregate_day_drops_outlier_trades():
     (group,) = aggregate_day(rows)
     assert group["min_kg"] == 20_000 and group["max_kg"] == 60_000
     assert "이상한 위판장 (삼천포수협)" not in group["market_prices"]
+
+
+def test_quiet_species_and_peak_months():
+    db = _db_with_two_weeks()
+    # 두 달 전에만 잡힌 어종 — 지금 목록 기준엔 못 들지만 "뜸한 어종"으로 나와야 한다
+    db.put_fish_day("2026-07-20", aggregate_day([_row(name="도루묵", code="600777", amount=80_000, weight=20)]), 1, 0)
+    data = FishQueries(db).species()
+    quiet = {s["name"]: s for s in data["quiet"]}
+    assert quiet["도루묵"]["last_date"] == "2026-07-20" and quiet["도루묵"]["last_kg"] == 4_000
+    assert quiet["도루묵"]["peak_months"] == [7]
+    assert {s["name"] for s in data["species"]} >= {"쥐치", "물메기"}
+    assert data["months_covered"] == 3  # 7월 ~ 9월
+
+    detail = FishQueries(db).detail("600777")
+    assert detail["is_quiet"] and detail["peak_months"] == [7]
+
+
+def test_species_result_is_cached_until_new_day():
+    db = _db_with_two_weeks()
+    queries = FishQueries(db)
+    first = queries.species()
+    assert queries.species() is first
+    db.put_fish_day("2026-09-24", aggregate_day([_row()]), 1, 0)
+    assert queries.species() is not first

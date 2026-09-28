@@ -366,6 +366,14 @@ class Database:
             rows.append(item)
         return rows
 
+    def fish_totals(self) -> list[dict]:
+        """전체 기간의 어종 × 상태 × 날짜 합계. 목록용이라 무거운 JSON 칸은 읽지 않는다."""
+        rows = self._query("SELECT code, state, name, date, amount, weight FROM fish_daily ORDER BY date")
+        return [dict(row) for row in rows]
+
+    def fish_day_count(self) -> int:
+        return self._query("SELECT COUNT(*) AS n FROM fish_days")[0]["n"]
+
     def fish_latest_date(self) -> str | None:
         rows = self._query("SELECT MAX(date) AS date FROM fish_daily")
         return rows[0]["date"] if rows else None
