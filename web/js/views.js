@@ -6,6 +6,11 @@ import { renderTrendChart } from './chart.js';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (v) => (v == null ? '—' : `${v.toLocaleString('ko-KR')}원`);
 const CATEGORY_GROUP = { 채소: '채소', 과채: '과일', 과일: '과일', 수산: '수산' };
+// 받침 유무로 이/가를 고른다 ("전통시장이", "대형마트가"). 한글이 아니면 받침 없음으로 본다.
+const iGa = (word) => {
+  const code = String(word).charCodeAt(String(word).length - 1) - 0xac00;
+  return code >= 0 && code <= 11171 && code % 28 !== 0 ? '이' : '가';
+};
 
 function deltaBadge(pct) {
   if (pct == null) return '<span class="delta flat">평년 정보 없음</span>';
@@ -37,7 +42,7 @@ export async function mainView(view) {
       <div>
         <div class="eyebrow">${month}월의 장바구니</div>
         <h1>지금 제철인 ${inSeason.length}가지,<br>평년보다 얼마나 쌀까요?</h1>
-        <p>현재 가격과 평년 대비 등락은 무료예요. 가격 추이와 최저가 판매처는 크레딧으로 볼 수 있어요.</p>
+        <p>현재 가격과 평년 대비 등락은 무료예요. 가격 추이와 판매처별 가격은 크레딧으로 볼 수 있어요.</p>
       </div>
     </section>
     ${cheap.length ? `
@@ -133,7 +138,7 @@ export async function itemView(view, id, session) {
       ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<span class="${item.season_months.includes(m) ? 'on' : ''} ${m === month ? 'now' : ''}" ${m === month ? 'aria-current="true"' : ''}>${m}월</span>`).join('')}
     </div>
     <section class="panel" id="trend-panel"></section>
-    <section class="panel" id="shop-panel"></section>`;
+    <section class="panel" id="where-panel"></section>`;
 
   setupPaid(view.querySelector('#trend-panel'), {
     title: '가격 변동 추이', feature: 'trend', item, session,
@@ -142,11 +147,12 @@ export async function itemView(view, id, session) {
     load: () => api.trend(item.id),
     render: renderTrend,
   });
-  setupPaid(view.querySelector('#shop-panel'), {
-    title: '가장 싸게 파는 곳', feature: 'shop', item, session,
-    teaser: `온라인 쇼핑몰의 판매가를 ${esc(item.shop_label)}당 가격으로 맞춰서, 싼 순서로 5곳을 찾아드려요.`,
-    load: () => api.shop(item.id),
-    render: renderShop,
+  setupPaid(view.querySelector('#where-panel'), {
+    title: '어디서 사면 쌀까', feature: 'where', item, session,
+    disabled: item.price == null ? '이 품목은 아직 가격 기록이 없어요.' : null,
+    teaser: '전통시장과 대형마트 중 어디가 더 싼지, 어느 지역이 가장 싼지 전국 조사 가격으로 비교해 드려요.',
+    load: () => api.where(item.id),
+    render: renderWhere,
   });
 }
 
@@ -225,24 +231,35 @@ function renderTrend(body, data) {
   window.addEventListener('resize', onResize);
 }
 
-function renderShop(body, data) {
-  if (!data.offers.length) {
-    body.innerHTML = '<p class="empty">양을 비교할 수 있는 상품을 찾지 못했어요.</p>';
-    return;
-  }
-  const fetched = new Date(data.fetched_at * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-  body.innerHTML = `<ol class="offers">
-    ${data.offers.map((o, n) => `
-      <li class="offer">
-        <span class="offer-rank">${n + 1}</span>
-        <div>
-          <div class="offer-title">${o.link ? `<a href="${esc(o.link)}" target="_blank" rel="noopener noreferrer">${esc(o.title)}</a>` : esc(o.title)}</div>
-          <div class="offer-mall">${esc(o.mall)}</div>
-        </div>
-        <div class="offer-price num"><b>${won(o.unit_price)}</b><span>${esc(data.shop_label)}당 · 판매가 ${won(o.price)}</span></div>
-      </li>`).join('')}
-  </ol>
-  <p class="fineprint">${fetched} 기준 검색 결과예요. 배송비는 포함되지 않았을 수 있고, 양은 상품명에서 읽은 값이에요.</p>`;
+function renderWhere(body, data) {
+  const channels = Object.entries(data.channels).sort((a, b) => a[1].avg - b[1].avg);
+  const regions = Object.entries(data.regions).sort((a, b) => a[1].avg - b[1].avg);
+  const [cheapName, cheap] = channels[0];
+  const dearest = channels[channels.length - 1];
+  const gap = channels.length > 1 ? Math.round((1 - cheap.avg / dearest[1].avg) * 1000) / 10 : 0;
+  const unit = esc(data.price_unit);
+  const maxChannel = Math.max(...channels.map(([, c]) => c.avg));
+  const bar = (v) => `<span class="bar" aria-hidden="true"><i style="width:${Math.max(4, Math.round((v / maxChannel) * 100))}%"></i></span>`;
+
+  body.innerHTML = `
+    <p class="where-headline">${channels.length > 1 && gap >= 1
+      ? `<b>${esc(cheapName)}</b>${iGa(cheapName)} ${esc(dearest[0])}보다 평균 <b>${gap}%</b> 싸요.`
+      : '판매처 유형 간 가격 차이가 거의 없어요.'}</p>
+    <h3 class="sub-title">판매처 유형별 <small>${unit} 기준 평균 · 가장 싼 곳</small></h3>
+    <ul class="rank-list">
+      ${channels.map(([name, c], n) => `
+        <li class="${n === 0 ? 'best' : ''}">
+          <span class="rank-name">${esc(name)} <small>${c.n}곳</small></span>
+          ${bar(c.avg)}
+          <span class="rank-value num"><b>${won(c.avg)}</b><small>최저 ${won(c.min)}</small></span>
+        </li>`).join('')}
+    </ul>
+    <h3 class="sub-title">가장 싼 지역 <small>지역 평균이 낮은 순</small></h3>
+    <ol class="region-list">
+      ${regions.slice(0, 5).map(([name, r]) => `
+        <li><span>${esc(name)}</span><span class="num">${won(r.avg)} <small>(${r.n}곳)</small></span></li>`).join('')}
+    </ol>
+    <p class="fineprint">${esc(data.date)} 한국농수산식품유통공사(aT) 소매가격 조사 기준, 조사처 ${data.n}곳. 조사처 이름은 aT가 익명으로 공개해서 유형까지만 보여드려요.</p>`;
 }
 
 // ── 로그인 / 가입 ────────────────────────────────────────────
@@ -289,7 +306,7 @@ export function authView(view, mode, session, next) {
 // ── 내 크레딧 ────────────────────────────────────────────────
 
 const REASON = { signup_bonus: '가입 보너스', use: '사용', admin_grant: '지급' };
-const FEATURE = { trend: '가격 추이', shop: '최저가' };
+const FEATURE = { trend: '가격 추이', where: '판매처 비교', shop: '최저가' };
 
 function ledgerRows(ledger, names) {
   return ledger.map((r) => `<tr>

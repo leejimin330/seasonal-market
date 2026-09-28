@@ -19,7 +19,7 @@ def setup():
     db = Database(":memory:")
     db.create_user("kim", "h", bonus=5, now=0)
     clock = Clock()
-    return db, LocalCredits(db, costs={"trend": 1, "shop": 2}, unlock_hours=24, clock=clock), clock
+    return db, LocalCredits(db, costs={"trend": 1, "where": 2}, unlock_hours=24, clock=clock), clock
 
 
 def test_signup_bonus_is_in_ledger(setup):
@@ -30,10 +30,10 @@ def test_signup_bonus_is_in_ledger(setup):
 
 def test_use_charges_once_within_unlock(setup):
     _, credits, clock = setup
-    first = credits.use("kim", "shop", "crab")
+    first = credits.use("kim", "where", "crab")
     assert first.charged and first.balance == 3
     clock.now += 23 * 3600
-    again = credits.use("kim", "shop", "crab")
+    again = credits.use("kim", "where", "crab")
     assert not again.charged and again.balance == 3
 
 
@@ -49,18 +49,18 @@ def test_unlock_is_per_item_and_feature(setup):
     _, credits, _ = setup
     credits.use("kim", "trend", "crab")
     assert credits.use("kim", "trend", "apple").charged
-    assert credits.use("kim", "shop", "crab").charged
+    assert credits.use("kim", "where", "crab").charged
     assert credits.balance("kim") == 1
 
 
 def test_insufficient_changes_nothing(setup):
     db, credits, _ = setup
-    credits.use("kim", "shop", "a")
-    credits.use("kim", "shop", "b")
+    credits.use("kim", "where", "a")
+    credits.use("kim", "where", "b")
     with pytest.raises(InsufficientCredits):
-        credits.use("kim", "shop", "c")
+        credits.use("kim", "where", "c")
     assert credits.balance("kim") == 1
-    assert credits.unlocked_until("kim", "shop", "c") is None
+    assert credits.unlocked_until("kim", "where", "c") is None
     assert len(credits.history("kim")) == 3
 
 
@@ -70,7 +70,7 @@ def test_concurrent_use_never_goes_negative(setup):
 
     def worker(n):
         try:
-            credits.use("kim", "shop", f"item{n}")
+            credits.use("kim", "where", f"item{n}")
         except InsufficientCredits:
             errors.append(n)
 

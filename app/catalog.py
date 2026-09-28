@@ -1,7 +1,8 @@
 """품목 목록(items.csv)과 제철 표(seasons.csv).
 
-둘 다 사람이 손으로 관리한다. KAMIS 품목 코드는 등급·단위가 복잡해서 API로 자동
-매핑하기보다 좁은 목록을 직접 맞추는 쪽이 빠르고 정확하다 (기획서 10절).
+둘 다 사람이 손으로 관리한다. aT 가격 데이터는 한 품목 안에 품종·등급·단위가 여럿 섞여
+오고(고등어는 생물·냉동·수입 염장이 동시에 조사된다), 배추처럼 계절마다 조사 품종이
+바뀌기도 한다. 어떤 행을 한 줄의 가격으로 이어 붙일지를 여기서 정한다.
 """
 
 from __future__ import annotations
@@ -10,14 +11,20 @@ import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# 크기가 1이면 "1포기"처럼, 아니면 "100g", "10개"처럼 붙여 쓴다.
+_UNITS_WITH_ONE = {"포기", "개", "마리", "kg", "손"}
+
 
 @dataclass(frozen=True)
-class KamisCode:
-    category: str
-    item: str
-    kind: str
-    rank: str
-    verified: bool
+class AtCode:
+    """공공데이터포털 aT 일별 도·소매 가격정보의 조회 조건."""
+
+    category: str                 # 부류코드
+    item: str                     # 품목코드
+    varieties: tuple[str, ...]    # 이어 붙일 품종코드. 한 날짜에 여럿이면 조사 건수가 많은 쪽을 쓴다.
+    grades: tuple[str, ...]       # 등급코드 (04 상품, 20 大 …)
+    unit: str                     # 이 단위의 행만 쓴다 — 단위가 섞이면 가격이 튄다
+    unit_size: str
 
 
 @dataclass(frozen=True)
@@ -25,15 +32,14 @@ class Item:
     id: str
     name: str
     category: str
-    price_unit: str          # KAMIS 소매가의 단위 ("100g", "1포기" …). 화면에 가격과 함께 쓴다.
-    kamis: KamisCode | None  # 코드를 모르는 품목은 None — 가격 없이 최저가만 제공한다
-    shop_query: str
-    shop_unit: str           # "g" 또는 "ea"
-    shop_qty: int            # 비교 기준량. g이면 1000(=1kg당), ea이면 1(=1개당)
-    shop_label: str          # 화면용 기준 단위 ("1kg", "1마리")
+    at: AtCode
     season_months: frozenset[int] = field(default_factory=frozenset)
     main_region: str = ""
     season_note: str = ""
+
+    @property
+    def price_unit(self) -> str:
+        return f"{self.at.unit_size}{self.at.unit}"
 
     def in_season(self, month: int) -> bool:
         return month in self.season_months
@@ -54,6 +60,10 @@ class Catalog:
         return len(self.items)
 
 
+def _codes(text: str) -> tuple[str, ...]:
+    return tuple(code for code in text.split("|") if code)
+
+
 def load_catalog(data_dir: Path) -> Catalog:
     seasons: dict[str, dict] = {}
     with open(data_dir / "seasons.csv", encoding="utf-8", newline="") as f:
@@ -63,17 +73,16 @@ def load_catalog(data_dir: Path) -> Catalog:
     items: list[Item] = []
     with open(data_dir / "items.csv", encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
-            if row["shop_unit"] not in ("g", "ea"):
-                raise ValueError(f"{row['id']}: shop_unit은 g 또는 ea여야 합니다")
-            kamis = None
-            if row["kamis_item"]:
-                kamis = KamisCode(
-                    category=row["kamis_category"],
-                    item=row["kamis_item"],
-                    kind=row["kamis_kind"],
-                    rank=row["kamis_rank"],
-                    verified=row["kamis_verified"] == "1",
-                )
+            at = AtCode(
+                category=row["at_category"],
+                item=row["at_item"],
+                varieties=_codes(row["at_varieties"]),
+                grades=_codes(row["at_grades"]),
+                unit=row["at_unit"],
+                unit_size=row["at_unit_size"],
+            )
+            if not (at.varieties and at.grades):
+                raise ValueError(f"{row['id']}: 품종과 등급을 하나 이상 적어야 합니다")
             season = seasons.get(row["id"], {})
             months = frozenset(int(m) for m in season.get("months", "").split("|") if m)
             items.append(
@@ -81,12 +90,7 @@ def load_catalog(data_dir: Path) -> Catalog:
                     id=row["id"],
                     name=row["name"],
                     category=row["category"],
-                    price_unit=row["price_unit"],
-                    kamis=kamis,
-                    shop_query=row["shop_query"],
-                    shop_unit=row["shop_unit"],
-                    shop_qty=int(row["shop_qty"]),
-                    shop_label=row["shop_label"],
+                    at=at,
                     season_months=months,
                     main_region=season.get("main_region", ""),
                     season_note=season.get("note", ""),

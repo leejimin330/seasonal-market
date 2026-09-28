@@ -1,6 +1,6 @@
 """HTTP API.
 
-무료: 품목 목록·현재 가격·평년 대비 등락률. 유료: 가격 추이, 최저가 찾기.
+무료: 품목 목록·현재 가격·평년 대비 등락률. 유료: 가격 추이, 어디서 살까(판매처 유형별 비교).
 유료 요청은 POST다 — 크레딧이 움직이는 요청이 링크 미리보기나 새로고침으로
 일어나지 않게, 그리고 SameSite=Lax 쿠키가 다른 사이트의 요청에 실리지 않게.
 """
@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from app import auth, config
 from app.credits import InsufficientCredits
 from app.prices import today_kst
-from app.shopping import ShopError
 
 router = APIRouter(prefix="/api")
 
@@ -61,6 +60,7 @@ def _item_json(item, summary: dict, month: int) -> dict:
         "name": item.name,
         "category": item.category,
         "price_unit": item.price_unit,
+        "has_normal": summary.get("vs_normal") is not None,
         "in_season": item.in_season(month),
         "season_months": sorted(item.season_months),
         "main_region": item.main_region,
@@ -73,7 +73,7 @@ def _item_json(item, summary: dict, month: int) -> dict:
 def _access(request: Request, user_id: str | None, item_id: str) -> dict:
     credits = request.app.state.credits
     result = {}
-    for feature in ("trend", "shop"):
+    for feature in ("trend", "where"):
         until = credits.unlocked_until(user_id, feature, item_id) if user_id else None
         result[feature] = {"cost": credits.cost(feature), "unlocked_until": until}
     return result
@@ -104,10 +104,10 @@ def status(request: Request):
     state = request.app.state
     return {
         "price_source": state.prices.source,
-        "shop_source": state.shop.source,
         "last_collect": state.db.get_meta("last_collect"),
+        "history": state.prices.history_progress(),
         "today": today_kst(state.clock).isoformat(),
-        "costs": {"trend": state.credits.cost("trend"), "shop": state.credits.cost("shop")},
+        "costs": {"trend": state.credits.cost("trend"), "where": state.credits.cost("where")},
         "unlock_hours": state.credits.unlock_hours,
         "signup_bonus": state.signup_bonus,
     }
@@ -127,8 +127,7 @@ def item_detail(request: Request, item_id: str, user_id: str | None = Depends(op
     item = _item_or_404(request, item_id)
     month = today_kst(state.clock).month
     summary = state.prices.summaries()[item.id]
-    return {**_item_json(item, summary, month), "shop_label": item.shop_label,
-            "access": _access(request, user_id, item.id)}
+    return {**_item_json(item, summary, month), "access": _access(request, user_id, item.id)}
 
 
 # ── 유료 ────────────────────────────────────────────────────
@@ -147,22 +146,16 @@ def trend(request: Request, item_id: str, user_id: str = Depends(require_user)):
     return {"series": series, "price_unit": item.price_unit, **_charge_json(charge)}
 
 
-@router.post("/items/{item_id}/shop")
-def shop(request: Request, item_id: str, user_id: str = Depends(require_user)):
-    """결과를 먼저 받고, 성공했을 때만 차감한다 (설계 2/4-3)."""
+@router.post("/items/{item_id}/where")
+def where(request: Request, item_id: str, user_id: str = Depends(require_user)):
+    """가장 최근 조사일의 판매처 유형별·지역별 평균과 최저가."""
     state = request.app.state
     item = _item_or_404(request, item_id)
-    if not state.credits.can_afford(user_id, "shop", item.id):
-        balance = state.credits.balance(user_id)
-        raise HTTPException(
-            402, {"message": "크레딧이 부족합니다.", "balance": balance, "cost": state.credits.cost("shop")}
-        )
-    try:
-        result = state.shop.offers(item)
-    except ShopError as exc:
-        raise HTTPException(503, "쇼핑 검색이 잠시 안 됩니다. 크레딧은 차감되지 않았습니다.") from exc
-    charge = _charge(request, user_id, "shop", item.id)
-    return {**result, "shop_label": item.shop_label, **_charge_json(charge)}
+    breakdown = state.prices.breakdown(item.id)
+    if not breakdown or not breakdown.get("channels"):
+        raise HTTPException(404, "이 품목은 아직 판매처별 가격이 없습니다.")
+    charge = _charge(request, user_id, "where", item.id)
+    return {**breakdown, "price_unit": item.price_unit, **_charge_json(charge)}
 
 
 # ── 계정 ────────────────────────────────────────────────────

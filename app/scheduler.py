@@ -60,3 +60,9 @@ async def _collect_once(prices) -> None:
     except Exception:
         # 수집이 실패해도 서버는 마지막 데이터로 계속 돈다. 화면에 기준일이 찍힌다.
         log.exception("가격 수집 실패")
+    try:
+        # 평년가용 과거 데이터. 이미 받은 품목은 건너뛰어서 두 번째부터는 금방 끝난다.
+        result = await asyncio.to_thread(prices.collect_history)
+        log.info("과거 가격 수집: %s", result)
+    except Exception:
+        log.exception("과거 가격 수집 실패")

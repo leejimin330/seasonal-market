@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
     delta         INTEGER NOT NULL,
     balance_after INTEGER NOT NULL,
     reason        TEXT NOT NULL,          -- signup_bonus / use / admin_grant
-    feature       TEXT,                   -- trend / shop (reason=use일 때)
+    feature       TEXT,                   -- trend / where (reason=use일 때)
     item_id       TEXT,
     memo          TEXT,
     actor         TEXT,                   -- 지급한 관리자
@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS unlocks (
     PRIMARY KEY (user_id, feature, item_id)
 );
 
--- 날짜별 소매가와 평년가. source는 kamis / sample — 샘플이 실제 데이터에 섞이지 않게 구분한다.
+-- 날짜별 전국 평균 소매가와 평년가. source는 at / sample — 샘플이 실제 데이터에 섞이지 않게 구분한다.
+-- 평년가는 수집 뒤 과거 5년치로 다시 계산해 채운다.
 CREATE TABLE IF NOT EXISTS daily_prices (
     item_id      TEXT NOT NULL,
     date         TEXT NOT NULL,           -- YYYY-MM-DD (KST)
@@ -56,11 +57,13 @@ CREATE TABLE IF NOT EXISTS daily_prices (
     PRIMARY KEY (item_id, date)
 );
 
-CREATE TABLE IF NOT EXISTS shop_cache (
-    item_id    TEXT PRIMARY KEY,
-    fetched_at REAL NOT NULL,
-    source     TEXT NOT NULL,
-    offers     TEXT NOT NULL              -- JSON 배열
+-- 최근 한 달의 판매처 유형별·지역별 가격 (유료 "어디서 살까"). 날짜별 JSON 한 덩어리.
+CREATE TABLE IF NOT EXISTS price_breakdown (
+    item_id TEXT NOT NULL,
+    date    TEXT NOT NULL,
+    data    TEXT NOT NULL,
+    source  TEXT NOT NULL,
+    PRIMARY KEY (item_id, date)
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -259,23 +262,49 @@ class Database:
         )
         return rows[0]["date"] if rows else None
 
-    # ── 쇼핑 캐시 / 메타 ────────────────────────────────────
+    def all_prices(self, item_id: str) -> dict[str, int]:
+        """평년가 계산용. {날짜: 가격} 전체."""
+        rows = self._query(
+            "SELECT date, price FROM daily_prices WHERE item_id = ? AND price IS NOT NULL", (item_id,)
+        )
+        return {row["date"]: row["price"] for row in rows}
 
-    def get_shop_cache(self, item_id: str) -> dict | None:
-        rows = self._query("SELECT * FROM shop_cache WHERE item_id = ?", (item_id,))
+    def first_price_date(self, item_id: str) -> str | None:
+        rows = self._query("SELECT MIN(date) AS date FROM daily_prices WHERE item_id = ?", (item_id,))
+        return rows[0]["date"] if rows else None
+
+    def set_normals(self, item_id: str, normals: dict[str, int | None]) -> None:
+        with self.transaction() as conn:
+            conn.executemany(
+                "UPDATE daily_prices SET normal_price = ? WHERE item_id = ? AND date = ?",
+                [(value, item_id, day) for day, value in normals.items()],
+            )
+
+    # ── 판매처 유형별 / 메타 ────────────────────────────────
+
+    def put_breakdowns(self, rows: list[tuple[str, str, dict, str]]) -> None:
+        """(item_id, date, data, source)"""
+        with self.transaction() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO price_breakdown (item_id, date, data, source) VALUES (?, ?, ?, ?)",
+                [(item, day, json.dumps(data, ensure_ascii=False), source) for item, day, data, source in rows],
+            )
+
+    def latest_breakdown(self, item_id: str) -> dict | None:
+        rows = self._query(
+            "SELECT date, data FROM price_breakdown WHERE item_id = ? ORDER BY date DESC LIMIT 1", (item_id,)
+        )
         if not rows:
             return None
-        row = dict(rows[0])
-        row["offers"] = json.loads(row["offers"])
-        return row
+        return {"date": rows[0]["date"], **json.loads(rows[0]["data"])}
 
-    def put_shop_cache(self, item_id: str, offers: list[dict], *, source: str, now: float) -> None:
+    def prune_breakdowns(self, before: str) -> None:
         with self.transaction() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO shop_cache (item_id, fetched_at, source, offers)"
-                " VALUES (?, ?, ?, ?)",
-                (item_id, now, source, json.dumps(offers, ensure_ascii=False)),
-            )
+            conn.execute("DELETE FROM price_breakdown WHERE date < ?", (before,))
+
+    def delete_breakdowns(self, source: str) -> None:
+        with self.transaction() as conn:
+            conn.execute("DELETE FROM price_breakdown WHERE source = ?", (source,))
 
     def get_meta(self, key: str) -> str | None:
         rows = self._query("SELECT value FROM meta WHERE key = ?", (key,))

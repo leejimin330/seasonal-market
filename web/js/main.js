@@ -54,18 +54,17 @@ function drawNav() {
 }
 
 function drawStatus(status) {
-  const labels = { kamis: 'KAMIS (aT)', naver: '네이버 쇼핑', sample: '샘플 데이터' };
+  const labels = { at: '한국농수산식품유통공사(aT) 소매가격 조사', sample: '샘플 데이터' };
   document.getElementById('price-source').textContent = labels[status.price_source];
-  document.getElementById('shop-source').textContent = labels[status.shop_source];
-  if (status.last_collect) {
-    document.getElementById('last-collect').textContent = ` · 마지막 수집 ${status.last_collect.replace('T', ' ').slice(0, 16)}`;
+  let note = '';
+  if (status.last_collect) note += ` · 마지막 수집 ${status.last_collect.replace('T', ' ').slice(0, 16)}`;
+  if (status.history && status.history.done < status.history.total) {
+    note += ` · 평년가 계산용 과거 자료 받는 중 (${status.history.done}/${status.history.total})`;
   }
+  document.getElementById('last-collect').textContent = note;
   const banner = document.getElementById('sample-banner');
-  const samples = [];
-  if (status.price_source === 'sample') samples.push('시세');
-  if (status.shop_source === 'sample') samples.push('최저가');
-  banner.hidden = samples.length === 0;
-  banner.textContent = `⚠ 샘플 데이터 — ${samples.join('·')}는 실제 값이 아닙니다. API 키를 넣으면 실제 데이터로 바뀝니다.`;
+  banner.hidden = status.price_source !== 'sample';
+  banner.textContent = '⚠ 샘플 데이터 — 시세는 실제 값이 아닙니다. 공공데이터포털 키를 넣으면 실제 데이터로 바뀝니다.';
 }
 
 async function route() {

@@ -16,7 +16,7 @@ from app.db import Database, InsufficientCredits
 __all__ = ["CreditService", "LocalCredits", "InsufficientCredits", "Charge", "FEATURES"]
 
 # 유료 기능 이름. 장부와 이용권 표에 이 문자열 그대로 남는다.
-FEATURES = ("trend", "shop")
+FEATURES = ("trend", "where")
 
 
 @dataclass(frozen=True)
@@ -33,8 +33,7 @@ class CreditService(Protocol):
     def unlocked_until(self, user_id: str, feature: str, item_id: str) -> float | None: ...
 
     def can_afford(self, user_id: str, feature: str, item_id: str) -> bool:
-        """차감 없이 "지금 쓰면 되는지"만 본다. 외부 호출 전에 쓴다 — 돈 안 낼 사람 때문에
-        네이버 API를 부르지 않게."""
+        """차감 없이 "지금 쓰면 되는지"만 본다."""
         ...
 
     def use(self, user_id: str, feature: str, item_id: str) -> Charge:

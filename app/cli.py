@@ -45,7 +45,9 @@ def main(argv=None) -> None:
     if args.command == "collect":
         from app.main import build_default_app
 
-        print(build_default_app().state.prices.collect())
+        prices = build_default_app().state.prices
+        print(prices.collect())
+        print(prices.collect_history())
         return
 
     user_id = args.user_id.strip().lower()

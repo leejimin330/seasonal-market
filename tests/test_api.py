@@ -2,7 +2,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.shopping import ShopError
 
 
 class Clock:
@@ -13,17 +12,13 @@ class Clock:
         return self.now
 
 
-class FailingNaver:
-    def search(self, query):
-        raise ShopError("down")
-
-
 @pytest.fixture
 def app_and_client():
     clock = Clock()
     app = create_app(db_path=":memory:", admins=frozenset({"boss"}), secret="s", clock=clock,
                      run_scheduler=False)
     app.state.prices.collect()
+    app.state.prices.collect_history()
     return app, TestClient(app), clock
 
 
@@ -46,26 +41,32 @@ def test_free_views_need_no_login(app_and_client):
 def test_paid_features_need_login(app_and_client):
     _, client, _ = app_and_client
     assert client.post("/api/items/mackerel/trend").status_code == 401
-    assert client.post("/api/items/mackerel/shop").status_code == 401
+    assert client.post("/api/items/mackerel/where").status_code == 401
 
 
 def test_signup_gives_bonus_and_trend_charges_once(app_and_client):
     _, client, _ = app_and_client
     assert _signup(client)["credits"] == 20
     first = client.post("/api/items/mackerel/trend").json()
-    assert first["charged"] and first["balance"] == 19 and len(first["series"]) > 300
+    assert first["charged"] and first["balance"] == 19 and len(first["series"]) > 200  # 평일 조사분만
     again = client.post("/api/items/mackerel/trend").json()
     assert not again["charged"] and again["balance"] == 19
     assert client.get("/api/items/mackerel").json()["access"]["trend"]["unlocked_until"]
 
 
-def test_shop_failure_does_not_charge(app_and_client):
-    app, client, _ = app_and_client
+def test_where_returns_channels_and_regions(app_and_client):
+    _, client, _ = app_and_client
     _signup(client)
-    app.state.shop.naver = FailingNaver()
-    r = client.post("/api/items/blue_crab/shop")
-    assert r.status_code == 503
-    assert client.get("/api/me").json()["credits"] == 20
+    data = client.post("/api/items/blue_crab/where").json()
+    assert data["charged"] and data["balance"] == 18
+    assert "전통시장" in data["channels"] and data["regions"]
+    assert data["price_unit"] == "1kg"
+
+
+def test_free_summary_has_normal_after_history(app_and_client):
+    _, client, _ = app_and_client
+    items = client.get("/api/items").json()["items"]
+    assert all(item["vs_normal"] is not None for item in items)
 
 
 def test_insufficient_credits_is_402(app_and_client):
@@ -73,8 +74,8 @@ def test_insufficient_credits_is_402(app_and_client):
     _signup(client)
     ids = [item.id for item in app.state.catalog][:10]
     for item_id in ids:
-        assert client.post(f"/api/items/{item_id}/shop").status_code == 200
-    r = client.post(f"/api/items/{[i.id for i in app.state.catalog][10]}/shop")
+        assert client.post(f"/api/items/{item_id}/where").status_code == 200
+    r = client.post(f"/api/items/{[i.id for i in app.state.catalog][10]}/where")
     assert r.status_code == 402
     assert r.json()["detail"]["balance"] == 0
 
@@ -122,14 +123,17 @@ def test_admin_grant(app_and_client):
     assert [u["id"] for u in client.get("/api/admin/users").json()["users"]] == ["kim", "boss"]
 
 
-def test_switching_to_kamis_drops_sample_rows(app_and_client):
+def test_switching_to_real_source_drops_sample_rows(app_and_client):
     app, _, _ = app_and_client
     assert app.state.db.price_sources() == {"sample"}
 
-    class FakeKamis:
-        def fetch_range(self, code, start, end):
-            return {end.isoformat(): {"price": 1000, "normal_price": 1100}}
+    class FakeAt:
+        def fetch_rows(self, code, start, end):
+            return [{"exmn_ymd": end.strftime("%Y%m%d"), "vrty_cd": code.varieties[0], "grd_cd": code.grades[0],
+                     "exmn_dd_prc": "1000", "sgg_cd": "1101", "sgg_nm": "서울", "mrkt_nm": "경동",
+                     "unit": code.unit, "unit_sz": code.unit_size}]
 
-    app.state.prices.kamis = FakeKamis()
+    app.state.prices.at = FakeAt()
     app.state.prices.collect()
-    assert app.state.db.price_sources() == {"kamis"}
+    assert app.state.db.price_sources() == {"at"}
+    assert app.state.prices.breakdown("apple")["channels"]["전통시장"]["avg"] == 1000

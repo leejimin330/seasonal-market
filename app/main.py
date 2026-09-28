@@ -20,11 +20,10 @@ from app import auth, config
 from app.catalog import load_catalog
 from app.credits import LocalCredits
 from app.db import Database
-from app.kamis import KamisClient
+from app.atprice import AtClient
 from app.prices import PriceService
 from app.routes import router
 from app.scheduler import run_daily
-from app.shopping import NaverShopping, ShopService
 
 WEB_DIR = config.ROOT / "web"
 DAY = 24 * 3600
@@ -45,8 +44,7 @@ def create_app(
     *,
     db_path: str = config.DB_PATH,
     data_dir: Path = config.DATA_DIR,
-    kamis: KamisClient | None = None,
-    naver: NaverShopping | None = None,
+    at: AtClient | None = None,
     admins: frozenset[str] = config.ADMIN_USERS,
     secret: str | None = None,
     clock=time.time,
@@ -54,7 +52,7 @@ def create_app(
 ) -> FastAPI:
     db = Database(db_path)
     catalog = load_catalog(data_dir)
-    prices = PriceService(db, catalog, kamis, clock=clock)
+    prices = PriceService(db, catalog, at, clock=clock)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -73,10 +71,9 @@ def create_app(
     state.db = db
     state.catalog = catalog
     state.prices = prices
-    state.shop = ShopService(db, naver, cache_seconds=config.SHOP_CACHE_SECONDS, clock=clock)
     state.credits = LocalCredits(
         db,
-        costs={"trend": config.TREND_COST, "shop": config.SHOP_COST},
+        costs={"trend": config.TREND_COST, "where": config.WHERE_COST},
         unlock_hours=config.UNLOCK_HOURS,
         clock=clock,
     )
@@ -106,13 +103,8 @@ def create_app(
 
 def build_default_app() -> FastAPI:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    kamis = KamisClient(config.KAMIS_CERT_KEY, config.KAMIS_CERT_ID) if config.kamis_enabled() else None
-    naver = (
-        NaverShopping(config.NAVER_CLIENT_ID, config.NAVER_CLIENT_SECRET)
-        if config.naver_enabled()
-        else None
-    )
-    return create_app(kamis=kamis, naver=naver)
+    at = AtClient(config.DATA_GO_KR_KEY) if config.at_enabled() else None
+    return create_app(at=at)
 
 
 
