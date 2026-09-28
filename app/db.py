@@ -1,0 +1,294 @@
+"""SQLite 저장소.
+
+연결 하나를 잠금으로 감싸 쓴다. FastAPI의 동기 엔드포인트는 스레드 풀에서 돌기 때문에,
+크레딧 차감처럼 "읽고 → 판단하고 → 쓰는" 일은 잠금 안의 트랜잭션 하나로 끝내야
+동시에 두 번 눌렀을 때 잔액이 음수가 되지 않는다.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import threading
+from contextlib import contextmanager
+from pathlib import Path
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    credits       INTEGER NOT NULL DEFAULT 0 CHECK (credits >= 0),
+    created_at    REAL NOT NULL
+);
+
+-- 크레딧이 움직인 모든 기록. 잔액은 users.credits에 두고, 이 표는 근거다.
+-- 나중에 플랫폼 재화로 옮길 때도 이 장부가 기준이 된다.
+CREATE TABLE IF NOT EXISTS credit_ledger (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       TEXT NOT NULL REFERENCES users(id),
+    delta         INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    reason        TEXT NOT NULL,          -- signup_bonus / use / admin_grant
+    feature       TEXT,                   -- trend / shop (reason=use일 때)
+    item_id       TEXT,
+    memo          TEXT,
+    actor         TEXT,                   -- 지급한 관리자
+    created_at    REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_user ON credit_ledger(user_id, id);
+
+-- 품목 하나 × 기능 하나의 이용권. 만료 전에는 다시 차감하지 않는다.
+CREATE TABLE IF NOT EXISTS unlocks (
+    user_id    TEXT NOT NULL,
+    feature    TEXT NOT NULL,
+    item_id    TEXT NOT NULL,
+    expires_at REAL NOT NULL,
+    PRIMARY KEY (user_id, feature, item_id)
+);
+
+-- 날짜별 소매가와 평년가. source는 kamis / sample — 샘플이 실제 데이터에 섞이지 않게 구분한다.
+CREATE TABLE IF NOT EXISTS daily_prices (
+    item_id      TEXT NOT NULL,
+    date         TEXT NOT NULL,           -- YYYY-MM-DD (KST)
+    price        INTEGER,
+    normal_price INTEGER,
+    source       TEXT NOT NULL,
+    PRIMARY KEY (item_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS shop_cache (
+    item_id    TEXT PRIMARY KEY,
+    fetched_at REAL NOT NULL,
+    source     TEXT NOT NULL,
+    offers     TEXT NOT NULL              -- JSON 배열
+);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+
+class InsufficientCredits(Exception):
+    def __init__(self, balance: int, cost: int):
+        super().__init__(f"크레딧 부족: 잔액 {balance}, 필요 {cost}")
+        self.balance = balance
+        self.cost = cost
+
+
+class Database:
+    def __init__(self, path: str):
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
+        self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        if path != ":memory:":
+            self._conn.execute("PRAGMA journal_mode = WAL")
+        self._lock = threading.RLock()
+        self._conn.executescript(SCHEMA)
+
+    def close(self) -> None:
+        self._conn.close()
+
+    @contextmanager
+    def transaction(self):
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield self._conn
+            except BaseException:
+                self._conn.execute("ROLLBACK")
+                raise
+            else:
+                self._conn.execute("COMMIT")
+
+    def _query(self, sql: str, params=()) -> list[sqlite3.Row]:
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    # ── 사용자 ──────────────────────────────────────────────
+
+    def get_user(self, user_id: str) -> sqlite3.Row | None:
+        rows = self._query("SELECT * FROM users WHERE id = ?", (user_id,))
+        return rows[0] if rows else None
+
+    def create_user(self, user_id: str, password_hash: str, *, bonus: int, now: float) -> bool:
+        """이미 있으면 False. 가입 보너스도 같은 트랜잭션에서 장부에 남긴다."""
+        with self.transaction() as conn:
+            exists = conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone()
+            if exists:
+                return False
+            conn.execute(
+                "INSERT INTO users (id, password_hash, credits, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, password_hash, bonus, now),
+            )
+            if bonus:
+                conn.execute(
+                    "INSERT INTO credit_ledger (user_id, delta, balance_after, reason, created_at)"
+                    " VALUES (?, ?, ?, 'signup_bonus', ?)",
+                    (user_id, bonus, bonus, now),
+                )
+        return True
+
+    def set_password(self, user_id: str, password_hash: str) -> None:
+        with self.transaction() as conn:
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+    def list_users(self) -> list[dict]:
+        rows = self._query("SELECT id, credits, created_at FROM users ORDER BY created_at DESC")
+        return [dict(row) for row in rows]
+
+    # ── 크레딧 ──────────────────────────────────────────────
+
+    def balance(self, user_id: str) -> int:
+        rows = self._query("SELECT credits FROM users WHERE id = ?", (user_id,))
+        return rows[0]["credits"] if rows else 0
+
+    def unlock_expiry(self, user_id: str, feature: str, item_id: str, now: float) -> float | None:
+        rows = self._query(
+            "SELECT expires_at FROM unlocks WHERE user_id = ? AND feature = ? AND item_id = ?"
+            " AND expires_at > ?",
+            (user_id, feature, item_id, now),
+        )
+        return rows[0]["expires_at"] if rows else None
+
+    def use_feature(
+        self, user_id: str, feature: str, item_id: str, *, cost: int, now: float, hours: float
+    ) -> tuple[bool, float]:
+        """이용권이 살아 있으면 그대로, 아니면 차감하고 새로 연다.
+
+        돌려주는 값은 (이번에 차감했는지, 이용권 만료 시각). 잔액이 모자라면
+        InsufficientCredits — 이때 DB는 아무것도 바뀌지 않는다.
+        """
+        with self.transaction() as conn:
+            row = conn.execute(
+                "SELECT expires_at FROM unlocks WHERE user_id = ? AND feature = ? AND item_id = ?"
+                " AND expires_at > ?",
+                (user_id, feature, item_id, now),
+            ).fetchone()
+            if row:
+                return False, row["expires_at"]
+
+            balance = conn.execute(
+                "SELECT credits FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            balance = balance["credits"] if balance else 0
+            if balance < cost:
+                raise InsufficientCredits(balance, cost)
+
+            after = balance - cost
+            expires_at = now + hours * 3600
+            conn.execute("UPDATE users SET credits = ? WHERE id = ?", (after, user_id))
+            conn.execute(
+                "INSERT INTO credit_ledger (user_id, delta, balance_after, reason, feature, item_id,"
+                " created_at) VALUES (?, ?, ?, 'use', ?, ?, ?)",
+                (user_id, -cost, after, feature, item_id, now),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO unlocks (user_id, feature, item_id, expires_at)"
+                " VALUES (?, ?, ?, ?)",
+                (user_id, feature, item_id, expires_at),
+            )
+            return True, expires_at
+
+    def grant(self, user_id: str, amount: int, *, actor: str, memo: str, now: float) -> int:
+        """관리자 지급. 새 잔액을 돌려준다. 없는 사용자면 KeyError."""
+        with self.transaction() as conn:
+            row = conn.execute("SELECT credits FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise KeyError(user_id)
+            after = row["credits"] + amount
+            conn.execute("UPDATE users SET credits = ? WHERE id = ?", (after, user_id))
+            conn.execute(
+                "INSERT INTO credit_ledger (user_id, delta, balance_after, reason, memo, actor,"
+                " created_at) VALUES (?, ?, ?, 'admin_grant', ?, ?, ?)",
+                (user_id, amount, after, memo, actor, now),
+            )
+            return after
+
+    def ledger(self, user_id: str, limit: int = 50) -> list[dict]:
+        rows = self._query(
+            "SELECT delta, balance_after, reason, feature, item_id, memo, created_at"
+            " FROM credit_ledger WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit),
+        )
+        return [dict(row) for row in rows]
+
+    # ── 가격 ────────────────────────────────────────────────
+
+    def upsert_prices(self, rows: list[tuple[str, str, int | None, int | None, str]]) -> None:
+        """(item_id, date, price, normal_price, source) 목록을 넣는다. 같은 날짜는 덮어쓴다."""
+        with self.transaction() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO daily_prices (item_id, date, price, normal_price, source)"
+                " VALUES (?, ?, ?, ?, ?)",
+                rows,
+            )
+
+    def delete_prices(self, source: str) -> None:
+        with self.transaction() as conn:
+            conn.execute("DELETE FROM daily_prices WHERE source = ?", (source,))
+
+    def price_sources(self) -> set[str]:
+        return {row["source"] for row in self._query("SELECT DISTINCT source FROM daily_prices")}
+
+    def latest_prices(self) -> dict[str, dict]:
+        """품목별 가장 최근의 (가격이 있는) 행."""
+        rows = self._query(
+            "SELECT p.item_id, p.date, p.price, p.normal_price, p.source FROM daily_prices p"
+            " JOIN (SELECT item_id, MAX(date) AS date FROM daily_prices WHERE price IS NOT NULL"
+            "       GROUP BY item_id) latest"
+            " ON latest.item_id = p.item_id AND latest.date = p.date"
+        )
+        return {row["item_id"]: dict(row) for row in rows}
+
+    def price_series(self, item_id: str, since: str) -> list[dict]:
+        rows = self._query(
+            "SELECT date, price, normal_price FROM daily_prices"
+            " WHERE item_id = ? AND date >= ? ORDER BY date",
+            (item_id, since),
+        )
+        return [dict(row) for row in rows]
+
+    def last_price_date(self, item_id: str) -> str | None:
+        rows = self._query(
+            "SELECT MAX(date) AS date FROM daily_prices WHERE item_id = ?", (item_id,)
+        )
+        return rows[0]["date"] if rows else None
+
+    # ── 쇼핑 캐시 / 메타 ────────────────────────────────────
+
+    def get_shop_cache(self, item_id: str) -> dict | None:
+        rows = self._query("SELECT * FROM shop_cache WHERE item_id = ?", (item_id,))
+        if not rows:
+            return None
+        row = dict(rows[0])
+        row["offers"] = json.loads(row["offers"])
+        return row
+
+    def put_shop_cache(self, item_id: str, offers: list[dict], *, source: str, now: float) -> None:
+        with self.transaction() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO shop_cache (item_id, fetched_at, source, offers)"
+                " VALUES (?, ?, ?, ?)",
+                (item_id, now, source, json.dumps(offers, ensure_ascii=False)),
+            )
+
+    def get_meta(self, key: str) -> str | None:
+        rows = self._query("SELECT value FROM meta WHERE key = ?", (key,))
+        return rows[0]["value"] if rows else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self.transaction() as conn:
+            conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
+
+    def backup_to(self, target: str) -> None:
+        with self._lock:
+            dest = sqlite3.connect(target)
+            try:
+                self._conn.backup(dest)
+            finally:
+                dest.close()

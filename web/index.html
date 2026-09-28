@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>제철 장바구니</title>
+  <meta name="description" content="이번 달 제철 농수산물의 시세와 평년 대비 가격, 판매처별 최저가">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🧺</text></svg>">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="sample-banner" class="sample-banner" hidden></div>
+  <header class="topbar">
+    <a class="brand" href="#/"><span class="brand-mark">🧺</span> 제철 장바구니</a>
+    <nav class="topnav" id="topnav"></nav>
+  </header>
+  <main id="view" class="view" aria-live="polite"></main>
+  <footer class="footer">
+    가격 출처: <span id="price-source">—</span> · 최저가 출처: <span id="shop-source">—</span>
+    <span id="last-collect"></span>
+  </footer>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

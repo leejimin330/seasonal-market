@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.env
+data/*.db
+data/*.db-*
+data/secret.key
+data/backups/
+data/logs/
+.pytest_cache/
+data/*.log
+.playwright-mcp/

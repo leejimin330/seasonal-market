@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+
+# 개발/테스트
+pytest>=8.0
+httpx2>=0.1        # starlette TestClient가 httpx 대신 요구한다
