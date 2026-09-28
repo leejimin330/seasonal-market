@@ -3,6 +3,7 @@
 //   #/item/:id    품목 상세
 //   #/login, #/signup, #/me, #/admin
 
+import { maybeShowAd } from './adpopup.js';
 import { api } from './api.js';
 import { adminView, authView, fishDetailView, fishListView, itemView, mainView, meView } from './views.js';
 
@@ -90,7 +91,11 @@ async function route() {
   }
 }
 
-window.addEventListener('hashchange', route);
+// 첫 화면은 세지 않고, 사용자가 화면을 넘어갈 때만 광고 빈도를 센다.
+window.addEventListener('hashchange', () => {
+  route();
+  maybeShowAd(location.hash.replace(/^#\/?/, '').split(/[/?]/)[0]);
+});
 
 (async () => {
   const [me, status] = await Promise.all([api.me().catch(() => null), api.status().catch(() => null)]);
