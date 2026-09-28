@@ -208,6 +208,7 @@ export async function itemView(view, id, session) {
           <p class="origin-regions">${esc(item.main_region) || '정보 없음'}</p>
           ${item.places.provinces.length ? `<p class="origin-provinces">${item.places.provinces.map((p) => `<span class="badge">${esc(p)}</span>`).join(' ')}</p>` : ''}
           ${item.season_note ? `<p>${esc(item.season_note)}</p>` : ''}
+          ${item.story ? `<div class="origin-story"><h3>📖 산지 이야기</h3><p>${esc(item.story)}</p></div>` : ''}
           <p class="origin-months">제철: ${item.season_months.length ? item.season_months.map((m) => `${m}월`).join(' · ') : '연중'}</p>
         </div>
       </div>
@@ -366,6 +367,13 @@ function renderWhere(body, data) {
 // ── 수산물 산지 시세 ─────────────────────────────────────────
 
 const fishState = { query: '', state: '전체', sort: 'weight' };
+// 카드에는 시·도 이름을 줄여 쓴다 ("전라남도" → "전남"). 지도에는 원래 이름이 필요해 화면에서만 줄인다.
+const SHORT_PROVINCE = {
+  서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주', 대전광역시: '대전',
+  울산광역시: '울산', 세종특별자치시: '세종', 경기도: '경기', 강원도: '강원', 충청북도: '충북', 충청남도: '충남',
+  전라북도: '전북', 전라남도: '전남', 경상북도: '경북', 경상남도: '경남', 제주특별자치도: '제주',
+};
+const shortProvince = (name) => SHORT_PROVINCE[name] || name;
 const STATE_CHIPS = ['전체', '활어', '선어', '냉동', '건어'];
 const changeBadge = (pct) => (pct == null ? '<span class="delta flat">비교 자료 없음</span>'
   : Math.abs(pct) < 1 ? '<span class="delta flat">지난주와 비슷</span>'
@@ -418,7 +426,7 @@ export async function fishListView(view) {
       <a class="card" href="#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}">
         <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.kg)}<small>/ kg</small></div>
-        <div class="card-foot"><span>${esc(s.regions.join('·'))}</span>${changeBadge(s.change)}</div>
+        <div class="card-foot"><span>${esc(s.regions.map(shortProvince).join('·'))}</span>${changeBadge(s.change)}</div>
         <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 위판장 ${s.markets}곳</div>
       </a>`).join('') : '<p class="empty">조건에 맞는 어종이 없어요.</p>';
   };

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import statistics
 import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -44,14 +45,35 @@ def _num(value) -> float:
         return 0.0
 
 
-def aggregate_day(rows: list[dict]) -> list[dict]:
-    """하루치 행을 어종 × 상태(활어/선어/냉동 …)별로 묶는다. "기타…" 어종은 뺀다."""
-    groups: dict[tuple, dict] = {}
+OUTLIER_RATIO = 4  # 그날 중앙값의 1/4 미만, 4배 초과인 거래는 입력 실수로 보고 뺀다
+
+
+def _trim_outliers(rows: list[dict]) -> list[dict]:
+    """어종 × 상태별로 kg당 가격이 중앙값에서 크게 벗어난 거래를 뺀다.
+
+    중량 단위를 잘못 적은 듯한 거래(쥐치 활어 중앙값 18,750원/kg 옆의 4,000원/kg)가
+    평균과 "싼 위판장" 목록을 흔든다.
+    """
+    by_key: dict[tuple, list[tuple[float, dict]]] = defaultdict(list)
     for row in rows:
         name = (row.get("mprcStdCodeNm") or "").strip()
         amount, weight = _num(row.get("csmtAmount")), _num(row.get("csmtWt"))
         if not name or name.startswith("기타") or amount <= 0 or weight <= 0:
             continue
+        by_key[(row.get("mprcStdCode"), row.get("kdfshSttusNm") or "-")].append((amount / weight, row))
+    kept = []
+    for items in by_key.values():
+        median = statistics.median(kg for kg, _ in items)
+        kept.extend(row for kg, row in items if median / OUTLIER_RATIO <= kg <= median * OUTLIER_RATIO)
+    return kept
+
+
+def aggregate_day(rows: list[dict]) -> list[dict]:
+    """하루치 행을 어종 × 상태(활어/선어/냉동 …)별로 묶는다. "기타…" 어종과 튀는 거래는 뺀다."""
+    groups: dict[tuple, dict] = {}
+    for row in _trim_outliers(rows):
+        name = row["mprcStdCodeNm"].strip()
+        amount, weight = _num(row.get("csmtAmount")), _num(row.get("csmtWt"))
         key = (row.get("mprcStdCode"), row.get("kdfshSttusNm") or "-")
         g = groups.setdefault(key, {
             "code": key[0], "state": key[1], "name": name, "amount": 0.0, "weight": 0.0, "n": 0,
@@ -152,7 +174,7 @@ class FishService:
         today = self._today()
         done = self.db.fish_days()
         targets = []
-        for offset in range(FIRST_DAYS, -1, -1):
+        for offset in range(FIRST_DAYS + 1):  # 최신 날부터 — 목록이 먼저 최근 시세로 차게
             day = today - timedelta(days=offset)
             if day.isoformat() not in done or offset <= RECHECK_DAYS:
                 targets.append(day)

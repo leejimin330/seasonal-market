@@ -65,3 +65,12 @@ def test_province_of_normalizes_short_and_renamed_names():
     assert province_of("강원특별자치도") == "강원도"
     assert province_of("전북특별자치도") == "전라북도"
     assert province_of("원양") == "원양"
+
+
+def test_aggregate_day_drops_outlier_trades():
+    rows = [_row(amount=20_000 * 3, weight=3) for _ in range(5)]
+    rows.append(_row(amount=4_000 * 10, weight=10, market="이상한 위판장"))  # 중앙값의 1/5
+    rows.append(_row(amount=60_000 * 3, weight=3, market="비싼 위판장"))     # 3배 — 남긴다
+    (group,) = aggregate_day(rows)
+    assert group["min_kg"] == 20_000 and group["max_kg"] == 60_000
+    assert "이상한 위판장 (삼천포수협)" not in group["market_prices"]

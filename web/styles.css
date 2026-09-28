@@ -246,6 +246,9 @@ select.chip { appearance: none; padding-right: 14px; }
 .origin-info .origin-regions { font-size: 20px; font-weight: 800; color: var(--ink); letter-spacing: -.02em; }
 .origin-provinces .badge { display: inline-block; margin: 0 4px 4px 0; }
 .origin-months { font-size: 14px; }
+.origin-story { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+.origin-story h3 { margin: 0 0 4px; font-size: 14px; color: var(--ink); }
+.origin-story p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--ink-2); }
 .page-head { margin-bottom: 18px; }
 .page-title { font-size: 28px; margin: 2px 0 6px; letter-spacing: -.03em; }
 .page-title small { font-size: 15px; font-weight: 500; color: var(--ink-3); margin-left: 6px; }
