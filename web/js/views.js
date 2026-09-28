@@ -5,6 +5,16 @@ import { renderTrendChart } from './chart.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (v) => (v == null ? '—' : `${v.toLocaleString('ko-KR')}원`);
+// 쇼핑몰 검색 결과로 바로 가는 링크. API가 아니라 각 사이트의 검색 주소라 신청·승인이 필요 없다.
+// (네이버 쇼핑 검색 API는 2026-07-31 종료, 쿠팡 파트너스 API는 실적 승인 뒤에만 열린다)
+const SHOPS = [
+  ['쿠팡', (q) => `https://www.coupang.com/np/search?q=${q}`],
+  ['네이버쇼핑', (q) => `https://search.shopping.naver.com/search/all?query=${q}`],
+  ['컬리', (q) => `https://www.kurly.com/search?sword=${q}`],
+  ['11번가', (q) => `https://search.11st.co.kr/pc/total-search?kwd=${q}`],
+  ['G마켓', (q) => `https://www.gmarket.co.kr/n/search?keyword=${q}`],
+];
+
 const CATEGORY_GROUP = { 채소: '채소', 과채: '과일', 과일: '과일', 수산: '수산' };
 // 받침 유무로 이/가를 고른다 ("전통시장이", "대형마트가"). 한글이 아니면 받침 없음으로 본다.
 const iGa = (word) => {
@@ -13,7 +23,7 @@ const iGa = (word) => {
 };
 
 function deltaBadge(pct) {
-  if (pct == null) return '<span class="delta flat">평년가 계산 중</span>';
+  if (pct == null) return '<span class="delta flat" title="같은 시기 과거 조사 기록이 3년치가 안 돼요">평년 자료 부족</span>';
   if (Math.abs(pct) < 1) return '<span class="delta flat">평년 수준</span>';
   return pct < 0
     ? `<span class="delta down" title="평년보다 ${Math.abs(pct)}% 쌉니다">▼ 평년보다 ${Math.abs(pct)}%</span>`
@@ -137,6 +147,11 @@ export async function itemView(view, id, session) {
     <div class="months" aria-label="제철 달">
       ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<span class="${item.season_months.includes(m) ? 'on' : ''} ${m === month ? 'now' : ''}" ${m === month ? 'aria-current="true"' : ''}>${m}월</span>`).join('')}
     </div>
+    <section class="shop-links" aria-label="쇼핑몰에서 찾아보기">
+      <span class="shop-links-title">사러 가기</span>
+      ${SHOPS.map(([name, url]) => `<a class="shop-link" href="${url(encodeURIComponent(item.name))}" target="_blank" rel="noopener noreferrer">${name} ↗</a>`).join('')}
+      <span class="unlock-note">각 쇼핑몰의 "${esc(item.name)}" 검색 결과로 이동해요.</span>
+    </section>
     <section class="panel" id="trend-panel"></section>
     <section class="panel" id="where-panel"></section>`;
 

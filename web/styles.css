@@ -170,6 +170,14 @@ select.chip { appearance: none; padding-right: 14px; }
 .months span.on { background: var(--brand-soft); color: var(--brand); font-weight: 700; }
 .months span.now { outline: 2px solid var(--ink); outline-offset: -2px; }
 
+.shop-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 20px; }
+.shop-links-title { font-weight: 700; font-size: 14px; margin-right: 4px; }
+.shop-link {
+  text-decoration: none; font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink-2);
+}
+.shop-link:hover { border-color: var(--brand); color: var(--brand); }
+.shop-links .unlock-note { flex-basis: 100%; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .panel-head h2 { font-size: 18px; margin: 0; letter-spacing: -.02em; }

@@ -13,6 +13,7 @@ KAMIS와 같은 aT 조사 가격인데, 전국 평균·평년가를 계산해 �
 
 from __future__ import annotations
 
+import json
 import statistics
 import time
 from collections import Counter, defaultdict
@@ -26,6 +27,7 @@ API_URL = "https://apis.data.go.kr/B552845/perDay/price"
 PAGE_SIZE = 1000          # 명세상 최대
 WINDOW_DAYS = 180         # 한 번에 요청하는 기간. 넘으면 페이지가 너무 많아진다.
 ONLINE_REGION = "9998"
+REQUEST_DEADLINE = 60     # 요청 하나에 쓰는 최대 시간(초)
 FIELDS = "exmn_ymd,vrty_cd,grd_cd,sgg_cd,sgg_nm,mrkt_nm,unit,unit_sz,exmn_dd_prc"
 
 # 화면에 보여줄 순서
@@ -124,8 +126,24 @@ def aggregate(rows: list[dict]) -> dict[str, dict]:
 class AtClient:
     def __init__(self, service_key: str, *, client: httpx.Client | None = None, pause: float = 0.1):
         self.service_key = service_key
-        self.client = client or httpx.Client(timeout=60)
+        self.client = client or httpx.Client(timeout=httpx.Timeout(30, connect=10))
         self.pause = pause  # 공공 API를 몰아서 두드리지 않게 호출 사이를 조금 띄운다
+
+    def _get_json(self, params: dict) -> dict:
+        """요청 하나에 전체 시간 상한을 둔다.
+
+        httpx의 timeout은 "한 번 읽을 때" 기준이라, 서버가 응답을 찔끔찔끔 흘려보내면 끝없이
+        기다린다 — 실제로 한 요청이 1시간 반 동안 멈춰 뒤의 수집까지 막은 적이 있다.
+        """
+        deadline = time.monotonic() + REQUEST_DEADLINE
+        chunks = []
+        with self.client.stream("GET", API_URL, params=params) as response:
+            response.raise_for_status()
+            for chunk in response.iter_bytes():
+                chunks.append(chunk)
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"응답이 {REQUEST_DEADLINE}초 안에 끝나지 않음")
+        return json.loads(b"".join(chunks))
 
     def _page(self, code: AtCode, start: date, end: date, page: int) -> tuple[list[dict], int]:
         params = {
@@ -149,11 +167,9 @@ class AtClient:
         last_error = None
         for attempt in range(3):
             try:
-                response = self.client.get(API_URL, params=params)
-                response.raise_for_status()
-                payload = response.json()
+                payload = self._get_json(params)
                 break
-            except (httpx.HTTPError, ValueError) as exc:
+            except (httpx.HTTPError, ValueError, TimeoutError) as exc:
                 last_error = exc
                 time.sleep(2 * (attempt + 1))
         else:
