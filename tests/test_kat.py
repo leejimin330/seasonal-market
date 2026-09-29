@@ -45,3 +45,20 @@ def test_produce_service_stores_today_and_queries_read_it():
     by_name = {s["name"]: s for s in data["species"]}
     assert by_name["무화과"]["kg"] == 10_000 and by_name["무화과"]["category"] == "과실류"
     assert FishQueries(AuctionStore(db, "fish")).species()["species"] == []  # 수산물 표와 섞이지 않는다
+
+
+def test_auction_detail_hides_series_and_trend_is_paid(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    app = create_app(db_path=str(tmp_path / "t.db"), secret="s", run_scheduler=False, clock=lambda: 1_790_000_000.0)
+    ProduceService(AuctionStore(app.state.db, "produce"), FakeKat(), clock=lambda: 1_790_000_000.0).collect()
+    client = TestClient(app)
+    code = next(s["code"] for s in client.get("/api/produce").json()["species"] if s["name"] == "무화과")
+    detail = client.get(f"/api/produce/{code}").json()
+    assert "series" not in detail and detail["access"]["trend"]["cost"] == 1
+    assert detail["emoji"] and detail["story"]
+    assert client.post(f"/api/produce/{code}/trend?state=무화과(일반)").status_code == 401
+    client.post("/api/signup", json={"user_id": "kim", "password": "12345678"})
+    trend = client.post(f"/api/produce/{code}/trend?state=무화과(일반)").json()
+    assert trend["charged"] and trend["series"][-1]["price"] == 10_000

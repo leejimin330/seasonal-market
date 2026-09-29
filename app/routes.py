@@ -1,6 +1,6 @@
 """HTTP API.
 
-무료: 품목 목록·현재 가격·평년 대비 등락률·가격 추이. 유료: 어디서 살까(판매처 유형별 비교).
+무료: 품목 목록·현재 가격·평년 대비 등락률. 유료: 가격 추이(소매·도매·위판), 어디서 살까(판매처 유형별 비교).
 유료 요청은 POST다 — 크레딧이 움직이는 요청이 링크 미리보기나 새로고침으로
 일어나지 않게, 그리고 SameSite=Lax 쿠키가 다른 사이트의 요청에 실리지 않게.
 """
@@ -82,7 +82,7 @@ def _item_json(item, summary: dict, month: int, today) -> dict:
 def _access(request: Request, user_id: str | None, item_id: str) -> dict:
     credits = request.app.state.credits
     result = {}
-    for feature in ("where",):
+    for feature in ("trend", "where"):
         until = credits.unlocked_until(user_id, feature, item_id) if user_id else None
         result[feature] = {"cost": credits.cost(feature), "unlocked_until": until}
     return result
@@ -116,7 +116,7 @@ def status(request: Request):
         "last_collect": state.db.get_meta("last_collect"),
         "history": state.prices.history_progress(),
         "today": today_kst(state.clock).isoformat(),
-        "costs": {"where": state.credits.cost("where")},
+        "costs": {"trend": state.credits.cost("trend"), "where": state.credits.cost("where")},
         "unlock_hours": state.credits.unlock_hours,
         "signup_bonus": state.signup_bonus,
     }
@@ -149,29 +149,46 @@ def item_detail(request: Request, item_id: str, user_id: str | None = Depends(op
     }
 
 
-@router.get("/items/{item_id}/trend")
-def trend(request: Request, item_id: str):
-    """무료. 1년치를 한 번에 준다 — 4주/3개월/1년 전환은 화면에서 자른다."""
-    state = request.app.state
-    item = _item_or_404(request, item_id)
-    series = state.prices.series(item.id)
-    if not any(point["price"] for point in series):
-        raise HTTPException(404, "이 품목은 아직 가격 기록이 없습니다.")
-    return {"series": series, "price_unit": item.price_unit}
-
-
 @router.get("/fish")
 def fish_species(request: Request):
     """수산물 산지 위판가 — 어종 목록. 무료."""
     return request.app.state.fish_queries.species()
 
 
-@router.get("/fish/{code}")
-def fish_detail(request: Request, code: str, state: str | None = None):
-    detail = request.app.state.fish_queries.detail(code, state)
+def _auction_trend_key(kind: str, code: str, state: str) -> str:
+    """이용권 표의 item_id. 소매 품목 id와 겹치지 않게 앞에 종류를 붙인다."""
+    return f"{kind}:{code}:{state}"
+
+
+def _auction_detail(request: Request, kind: str, code: str, state: str | None, user_id: str | None) -> dict:
+    queries = request.app.state.fish_queries if kind == "fish" else request.app.state.produce_queries
+    detail = queries.detail(code, state)
     if detail is None:
-        raise HTTPException(404, "이 어종은 위판 기록이 없습니다.")
+        raise HTTPException(404, "기록이 없습니다.")
+    # 추이는 유료라 상세에는 싣지 않는다. 이용권이 있는지만 알려준다.
+    detail.pop("series", None)
+    credits = request.app.state.credits
+    key = _auction_trend_key(kind, code, detail["state"])
+    detail["access"] = {"trend": {
+        "cost": credits.cost("trend"),
+        "unlocked_until": credits.unlocked_until(user_id, "trend", key) if user_id else None,
+    }}
     return detail
+
+
+def _auction_trend(request: Request, kind: str, code: str, state: str | None, user_id: str) -> dict:
+    queries = request.app.state.fish_queries if kind == "fish" else request.app.state.produce_queries
+    detail = queries.detail(code, state)
+    if detail is None or not detail["series"]:
+        raise HTTPException(404, "기록이 없습니다.")  # 보여줄 게 없으면 돈을 받지 않는다
+    charge = _charge(request, user_id, "trend", _auction_trend_key(kind, code, detail["state"]))
+    return {"series": detail["series"], "price_unit": "kg", **_charge_json(charge)}
+
+
+@router.get("/fish/{code}")
+def fish_detail(request: Request, code: str, state: str | None = None,
+                user_id: str | None = Depends(optional_user)):
+    return _auction_detail(request, "fish", code, state, user_id)
 
 
 @router.get("/produce")
@@ -181,14 +198,34 @@ def produce_items(request: Request):
 
 
 @router.get("/produce/{code}")
-def produce_detail(request: Request, code: str, state: str | None = None):
-    detail = request.app.state.produce_queries.detail(code, state)
-    if detail is None:
-        raise HTTPException(404, "이 품목은 도매 경매 기록이 없습니다.")
-    return detail
+def produce_detail(request: Request, code: str, state: str | None = None,
+                   user_id: str | None = Depends(optional_user)):
+    return _auction_detail(request, "produce", code, state, user_id)
 
 
 # ── 유료 ────────────────────────────────────────────────────
+
+@router.post("/items/{item_id}/trend")
+def trend(request: Request, item_id: str, user_id: str = Depends(require_user)):
+    """1년치를 한 번에 준다 — 4주/3개월/1년 전환은 화면에서 자른다. 이용권 하나로 모든 기간."""
+    state = request.app.state
+    item = _item_or_404(request, item_id)
+    series = state.prices.series(item.id)
+    if not any(point["price"] for point in series):
+        raise HTTPException(404, "이 품목은 아직 가격 기록이 없습니다.")  # 보여줄 게 없으면 돈을 받지 않는다
+    charge = _charge(request, user_id, "trend", item.id)
+    return {"series": series, "price_unit": item.price_unit, **_charge_json(charge)}
+
+
+@router.post("/fish/{code}/trend")
+def fish_trend(request: Request, code: str, state: str | None = None, user_id: str = Depends(require_user)):
+    return _auction_trend(request, "fish", code, state, user_id)
+
+
+@router.post("/produce/{code}/trend")
+def produce_trend(request: Request, code: str, state: str | None = None, user_id: str = Depends(require_user)):
+    return _auction_trend(request, "produce", code, state, user_id)
+
 
 @router.post("/items/{item_id}/where")
 def where(request: Request, item_id: str, user_id: str = Depends(require_user)):

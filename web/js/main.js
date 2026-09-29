@@ -120,9 +120,9 @@ async function route() {
   window.scrollTo(0, 0);
   try {
     if (parts[0] === 'item' && parts[1]) await itemView(view, decodeURIComponent(parts[1]), session);
-    else if (parts[0] === 'fish' && parts[1]) await fishDetailView(view, decodeURIComponent(parts[1]), params.get('state'));
+    else if (parts[0] === 'fish' && parts[1]) await fishDetailView(view, decodeURIComponent(parts[1]), params.get('state'), session);
     else if (parts[0] === 'fish') await fishListView(view);
-    else if (parts[0] === 'produce' && parts[1]) await produceDetailView(view, decodeURIComponent(parts[1]), params.get('state'));
+    else if (parts[0] === 'produce' && parts[1]) await produceDetailView(view, decodeURIComponent(parts[1]), params.get('state'), session);
     else if (parts[0] === 'produce') await produceListView(view);
     else if (parts[0] === 'login' || parts[0] === 'signup') authView(view, parts[0], session, params.get('next'));
     else if (parts[0] === 'me') await meView(view, session);

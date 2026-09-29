@@ -94,7 +94,7 @@ def create_app(
     state.prices = prices
     state.credits = LocalCredits(
         db,
-        costs={"where": config.WHERE_COST},
+        costs={"trend": config.TREND_COST, "where": config.WHERE_COST},
         unlock_hours=config.UNLOCK_HOURS,
         clock=clock,
     )

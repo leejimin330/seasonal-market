@@ -291,14 +291,15 @@ export async function itemView(view, id, session) {
     .catch(() => { view.querySelector('#origin-map').innerHTML = '<p class="empty">지도를 불러오지 못했어요.</p>'; })
     .finally(() => view.querySelector('#origin-map')?.removeAttribute('aria-busy'));
 
-  setupFree(view.querySelector('#trend-panel'), {
-    title: '가격 변동 추이',
-    empty: item.price == null ? '이 품목은 아직 가격 기록이 없어요.' : null,
+  setupPaid(view.querySelector('#trend-panel'), {
+    title: '가격 변동 추이', feature: 'trend', item, session, preview: 'chart',
+    disabled: item.price == null ? '이 품목은 아직 가격 기록이 없어요.' : null,
+    teaser: '최근 4주 · 3개월 · 1년 소매가를 평년가와 겹쳐 보여드려요.',
     load: () => api.trend(item.id),
     render: renderTrend,
   });
   setupPaid(view.querySelector('#where-panel'), {
-    title: '어디서 사면 쌀까', feature: 'where', item, session,
+    title: '어디서 사면 쌀까', feature: 'where', item, session, preview: 'list',
     disabled: item.price == null || item.stale ? '지금은 조사되지 않는 품목이라 판매처별 가격이 없어요.' : null,
     teaser: '전통시장과 대형마트 중 어디가 더 싼지, 어느 지역이 가장 싼지 전국 조사 가격으로 비교해 드려요.',
     load: () => api.where(item.id),
@@ -322,6 +323,27 @@ async function setupFree(panel, { title, empty, load, render }) {
   }
 }
 
+// 잠긴 패널 뒤에 까는 흐린 미리보기. 실제 값이 아니라 모양만 흉내 낸 가짜다 —
+// 흐림을 개발자 도구로 걷어내도 진짜 가격은 보이지 않는다.
+function fakeChart() {
+  const pts = Array.from({ length: 40 }, (_, i) => {
+    const y = 110 - 38 * Math.sin(i / 5) - 18 * Math.sin(i / 2.3) - i * 0.6;
+    return `${i * 18},${y.toFixed(1)}`;
+  }).join(' ');
+  const normal = Array.from({ length: 40 }, (_, i) => `${i * 18},${(100 - 30 * Math.sin(i / 6 + 1)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 702 200" preserveAspectRatio="none" class="fake-chart">
+    ${[40, 80, 120, 160].map((y) => `<line x1="0" x2="702" y1="${y}" y2="${y}" stroke="var(--grid)"/>`).join('')}
+    <polyline points="${normal}" fill="none" stroke="var(--series-normal)" stroke-width="3" stroke-dasharray="8 6"/>
+    <polyline points="${pts}" fill="none" stroke="var(--series-price)" stroke-width="3"/>
+  </svg>`;
+}
+
+function fakeList() {
+  return `<div class="fake-list">${[92, 68, 54, 40].map((w) => `
+    <div class="fake-row"><span class="fake-text"></span><span class="fake-bar"><i style="width:${w}%"></i></span><span class="fake-text short"></span></div>`).join('')}
+  </div>`;
+}
+
 function setupPaid(panel, opts) {
   const { title, feature, item, session } = opts;
   const access = item.access[feature];
@@ -337,8 +359,16 @@ function setupPaid(panel, opts) {
          <span class="unlock-note">보유 <span data-my-credits>${session.credits}</span> 크레딧</span>`
       : `<a class="btn" href="#/login?next=${encodeURIComponent(location.hash)}">로그인하고 보기</a>
          <span class="unlock-note">가입하면 크레딧을 드려요</span>`;
-    panel.innerHTML = `${head()}<div class="locked"><span class="lock-icon" aria-hidden="true">🔒</span>
-      <span>${opts.teaser}</span>${action}</div>`;
+    panel.innerHTML = `${head()}
+      <div class="paywall">
+        <div class="paywall-preview" aria-hidden="true">${opts.preview === 'list' ? fakeList() : fakeChart()}</div>
+        <div class="paywall-card">
+          <span class="lock-icon" aria-hidden="true">🔒</span>
+          <strong>${title}</strong>
+          <span class="paywall-teaser">${opts.teaser}</span>
+          ${action}
+        </div>
+      </div>`;
     panel.querySelector('[data-unlock]')?.addEventListener('click', async (e) => {
       if (session.credits < access.cost) {
         session.toast(`크레딧이 부족해요. (보유 ${session.credits}, 필요 ${access.cost})`);
@@ -512,9 +542,56 @@ function monthStrip(months, word) {
 }
 
 export const fishListView = (view) => auctionListView(view, 'fish');
-export const fishDetailView = (view, code, state) => auctionDetailView(view, 'fish', code, state);
+export const fishDetailView = (view, code, state, session) => auctionDetailView(view, 'fish', code, state, session);
 export const produceListView = (view) => auctionListView(view, 'produce');
-export const produceDetailView = (view, code, state) => auctionDetailView(view, 'produce', code, state);
+export const produceDetailView = (view, code, state, session) => auctionDetailView(view, 'produce', code, state, session);
+
+// 도매·수산 목록 위 캐러셀. 첫 장은 화면 소개, 다음 장은 지난주보다 많이 내린 품목.
+// 비교할 지난주 자료가 아직 없으면(도매는 오늘부터 쌓인다) 거래량이 많은 품목으로 대신한다.
+const HERO_MIN_WEIGHT = 500; // kg — 거래가 적으면 등락률이 튀어서 캐러셀엔 올리지 않는다
+// 한 주 만에 60% 넘게 내렸다면 대개 자료 오류다(활 보리새우 kg당 971원, ▼99%). 추천에서 뺀다.
+const HERO_MAX_DROP = -60;
+
+function drawAuctionHero(host, cfg, { latest, species, quiet, href }) {
+  const { node, addSlide } = carousel({ label: `${cfg.title} 추천` });
+  host.appendChild(node);
+
+  const intro = document.createElement('div');
+  intro.className = `hero-slide hero-intro auction-${cfg.path}`;
+  intro.innerHTML = `
+    <div class="eyebrow">${cfg.eyebrow} · ${esc(latest)} 기준 최근 7일</div>
+    <h1>${cfg.title}</h1>
+    <p>${cfg.desc}</p>
+    <div class="home-stats">
+      <span><b class="num">${new Set(species.map((s) => s.name)).size}</b>${cfg.unitWord === '어종' ? '종' : '개 품목'} 거래 중</span>
+      <span><b class="num">${species.length}</b>가지 ${cfg.path === 'fish' ? '(상태별)' : '(품종별)'}</span>
+      <span><b class="num">${quiet.length}</b> 뜸한 ${cfg.unitWord}</span>
+    </div>`;
+  addSlide(intro);
+
+  const seen = new Set();
+  const pickOnePerName = (list) => list.filter((s) => !seen.has(s.name) && seen.add(s.name));
+  const dropping = pickOnePerName(species.filter((s) => s.change != null && s.change <= -3 && s.change >= HERO_MAX_DROP && s.weight >= HERO_MIN_WEIGHT)
+    .sort((a, b) => a.change - b.change)).slice(0, 4);
+  const picks = dropping.length ? dropping : pickOnePerName([...species].sort((a, b) => b.weight - a.weight)).slice(0, 4);
+  const label = dropping.length ? '지난주보다 내렸어요' : '오늘 가장 많이 거래됐어요';
+
+  for (const s of picks) {
+    const slide = document.createElement('a');
+    slide.className = `hero-slide hero-item auction-${cfg.path}`;
+    slide.href = href(s);
+    slide.innerHTML = `
+      <div class="hero-item-emoji" aria-hidden="true">${s.emoji || ''}</div>
+      <div class="hero-item-body">
+        <div class="eyebrow">${label} · ${esc(s.state)}</div>
+        <h2>${esc(s.name)} ${s.change != null && s.change < 0 ? `<span class="hero-drop">▼ ${Math.abs(s.change)}%</span>` : ''}</h2>
+        <p class="hero-price num">${won(s.kg)} <small>/ kg · ${cfg.priceLabel} · ${esc(placeLabel(s))}</small></p>
+        ${s.story ? `<p class="hero-intro-text">${esc(s.story)}</p>` : ''}
+        <span class="hero-cta">자세히 보기 →</span>
+      </div>`;
+    addSlide(slide);
+  }
+}
 
 async function auctionListView(view, kind) {
   const cfg = AUCTIONS[kind];
@@ -528,11 +605,7 @@ async function auctionListView(view, kind) {
   }
   const href = (s) => `#/${cfg.path}/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}`;
   view.innerHTML = `
-    <section class="page-head">
-      <div class="eyebrow">${cfg.eyebrow} · ${esc(latest)} 기준 최근 7일</div>
-      <h1 class="page-title">${cfg.title} <small>지금 거래 중 ${species.length} · 뜸한 ${cfg.unitWord} ${quiet.length}</small></h1>
-      <p class="page-desc">${cfg.desc}</p>
-    </section>
+    <section class="hero-carousel" id="auction-hero"></section>
     <div class="controls">
       <input class="search" type="search" placeholder="${cfg.placeholder}" value="${esc(st.query)}" aria-label="${cfg.unitWord} 검색">
       ${cfg.chips.map(([label]) => `<button class="chip" data-chip="${label}" aria-pressed="${st.chip === label}">${label}</button>`).join('')}
@@ -550,6 +623,7 @@ async function auctionListView(view, kind) {
     <p class="fineprint">"${cfg.monthWord}"은 받아 둔 ${covered}개월 치 자료로 계산했어요. 1년치가 쌓이면 더 정확해져요.</p>
     <p class="fineprint">출처: ${cfg.source} 한 주 거래가 5kg 미만이면 가격이 튀어서 목록에서 뺐어요.</p>`;
   view.querySelector('[data-sort]').value = st.sort;
+  drawAuctionHero(view.querySelector('#auction-hero'), cfg, { latest, species, quiet, href });
 
   const grid = view.querySelector('#auction-grid');
   const quietGrid = view.querySelector('#quiet-grid');
@@ -595,7 +669,7 @@ async function auctionListView(view, kind) {
   view.querySelector('[data-sort]').addEventListener('change', (e) => { st.sort = e.target.value; draw(); });
 }
 
-async function auctionDetailView(view, kind, code, state) {
+async function auctionDetailView(view, kind, code, state, session) {
   const cfg = AUCTIONS[kind];
   view.innerHTML = '<p class="empty">불러오는 중…</p>';
   let d;
@@ -669,9 +743,13 @@ async function auctionDetailView(view, kind, code, state) {
     provinces,
   })
     .catch(() => { view.querySelector('#origin-map').innerHTML = ''; });
-  const trend = view.querySelector('#auction-trend');
-  trend.innerHTML = `<div class="panel-head"><h2>${cfg.priceLabel} 추이</h2></div><div data-body></div>`;
-  renderTrend(trend.querySelector('[data-body]'), { series: d.series, price_unit: 'kg', priceLabel: cfg.priceLabel });
+  setupPaid(view.querySelector('#auction-trend'), {
+    title: `${cfg.priceLabel} 추이`, feature: 'trend', session, preview: 'chart',
+    item: { name: `${d.name}(${d.state})`, access: d.access },
+    teaser: `받아 둔 기간의 kg당 ${cfg.priceLabel}를 날짜별로 보여드려요.`,
+    load: () => (kind === 'fish' ? api.fishTrend(code, d.state) : api.produceTrend(code, d.state)),
+    render: (body, data) => renderTrend(body, { ...data, priceLabel: cfg.priceLabel }),
+  });
 }
 
 // ── 로그인 / 가입 ────────────────────────────────────────────
@@ -720,10 +798,19 @@ export function authView(view, mode, session, next) {
 const REASON = { signup_bonus: '가입 보너스', use: '사용', admin_grant: '지급' };
 const FEATURE = { trend: '가격 추이', where: '판매처 비교', shop: '최저가' };
 
+// 도매·수산 이용권은 "fish:코드:상태" 꼴이라 이름 대신 종류와 상태를 보여준다.
+function itemLabel(id, names) {
+  if (names[id]) return names[id];
+  const [kind, , state] = id.split(':');
+  if (kind === 'fish') return `수산물 (${state})`;
+  if (kind === 'produce') return `농산물 도매 (${state})`;
+  return id;
+}
+
 function ledgerRows(ledger, names) {
   return ledger.map((r) => `<tr>
     <td>${new Date(r.created_at * 1000).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })}</td>
-    <td>${REASON[r.reason] || r.reason}${r.feature ? ` · ${FEATURE[r.feature] || r.feature}` : ''}${r.item_id ? ` · ${esc(names[r.item_id] || r.item_id)}` : ''}${r.memo ? ` · ${esc(r.memo)}` : ''}</td>
+    <td>${REASON[r.reason] || r.reason}${r.feature ? ` · ${FEATURE[r.feature] || r.feature}` : ''}${r.item_id ? ` · ${esc(itemLabel(r.item_id, names))}` : ''}${r.memo ? ` · ${esc(r.memo)}` : ''}</td>
     <td class="right num ${r.delta > 0 ? 'plus' : 'minus'}">${r.delta > 0 ? '+' : ''}${r.delta}</td>
     <td class="right num">${r.balance_after}</td></tr>`).join('');
 }

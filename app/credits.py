@@ -16,7 +16,6 @@ from app.db import Database, InsufficientCredits
 __all__ = ["CreditService", "LocalCredits", "InsufficientCredits", "Charge", "FEATURES"]
 
 # 유료 기능 이름. 장부와 이용권 표에 이 문자열 그대로 남는다.
-# trend(가격 추이)는 무료로 바뀌었지만 예전 장부 기록을 읽을 수 있게 이름은 남긴다.
 FEATURES = ("trend", "where")
 
 

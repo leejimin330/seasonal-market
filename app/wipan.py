@@ -373,7 +373,7 @@ class FishQueries:
                 "weight": round(ww), "markets": max(r["markets"] for r in week),
                 "regions": [r["name"] for r in regions[:2]],
                 "cities": [c["name"] for c in cities[:2]],
-                "emoji": self._note(rows[-1]["name"])["emoji"],
+                **self._note(rows[-1]["name"]),
                 "peak_months": history.get((code, state), {}).get("peak_months", []),
                 "category": history.get((code, state), {}).get("category", ""),
             })
