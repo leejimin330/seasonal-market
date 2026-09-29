@@ -298,7 +298,7 @@ class FishQueries:
         self._cache = None
 
     def _note(self, name: str) -> dict:
-        return self.notes.get(self.kind, name) if self.notes else {"emoji": "", "story": ""}
+        return self.notes.get(self.kind, name) if self.notes else {"emoji": "", "story": "", "season_months": []}
 
     def _cities(self, rows: list[dict]) -> list[dict]:
         """여러 날의 행을 시·군·구별로 합친다. 못 찾은 곳은 뺀다(시·도 목록에는 남아 있다)."""

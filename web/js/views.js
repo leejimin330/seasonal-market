@@ -541,6 +541,12 @@ function monthStrip(months, word) {
   </div>`;
 }
 
+// 받아 둔 자료가 1년치가 안 되면 "주로 거래되는 달"은 그 기간에 몰려 틀린다. 그동안은 사람이 적은 제철을 쓴다.
+const FULL_YEAR_MONTHS = 12;
+const seasonStrip = (s, covered, cfg) => (covered >= FULL_YEAR_MONTHS
+  ? monthStrip(s.peak_months, cfg.monthWord)
+  : monthStrip(s.season_months, '제철'));
+
 export const fishListView = (view) => auctionListView(view, 'fish');
 export const fishDetailView = (view, code, state, session) => auctionDetailView(view, 'fish', code, state, session);
 export const produceListView = (view) => auctionListView(view, 'produce');
@@ -620,7 +626,9 @@ async function auctionListView(view, kind) {
     <div class="grid" id="auction-grid"></div>
     <h2 class="section-title quiet-title">요즘 거래가 뜸한 ${cfg.unitWord} <small>최근 7일 거래가 적거나 없어요 · 마지막 거래일 순</small></h2>
     <div class="grid" id="quiet-grid"></div>
-    <p class="fineprint">"${cfg.monthWord}"은 받아 둔 ${covered}개월 치 자료로 계산했어요. 1년치가 쌓이면 더 정확해져요.</p>
+    <p class="fineprint">${covered >= FULL_YEAR_MONTHS
+    ? `"${cfg.monthWord}"은 받아 둔 ${covered}개월 치 거래량으로 계산했어요.`
+    : `초록 막대는 널리 알려진 제철이에요. 받아 둔 자료가 1년치가 되면 실제 거래량으로 계산한 "${cfg.monthWord}"로 바뀌어요.`}</p>
     <p class="fineprint">출처: ${cfg.source} 한 주 거래가 5kg 미만이면 가격이 튀어서 목록에서 뺐어요.</p>`;
   view.querySelector('[data-sort]').value = st.sort;
   drawAuctionHero(view.querySelector('#auction-hero'), cfg, { latest, species, quiet, href });
@@ -646,7 +654,7 @@ async function auctionListView(view, kind) {
         <div class="price num">${won(s.kg)}<small>/ kg</small></div>
         <div class="card-foot"><span>${esc(placeLabel(s))}</span>${changeBadge(s.change)}</div>
         <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 시장 ${s.markets}곳</div>
-        ${monthStrip(s.peak_months, cfg.monthWord)}
+        ${seasonStrip(s, covered, cfg)}
       </a>`).join('') : `<p class="empty">조건에 맞는 ${cfg.unitWord}이 없어요.</p>`;
 
     const quietList = quiet.filter(keep);
@@ -656,7 +664,7 @@ async function auctionListView(view, kind) {
         <div class="card-top"><h3><span class="emoji" aria-hidden="true">${s.emoji || ''}</span>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.last_kg)}<small>/ kg</small></div>
         <div class="card-sub">마지막 거래 ${esc(s.last_date)} · 그 주 평균</div>
-        ${monthStrip(s.peak_months, cfg.monthWord)}
+        ${seasonStrip(s, covered, cfg)}
       </a>`).join('') : '<p class="empty">없어요.</p>';
   };
   draw();
@@ -700,11 +708,16 @@ async function auctionDetailView(view, kind, code, state, session) {
         <div class="card-sub num">거래 ${d.weight.toLocaleString('ko-KR')}kg · 낙찰가 ${won(d.min_kg)} ~ ${won(d.max_kg)}</div>
       </div>
     </section>
-    ${d.peak_months.length ? `
-    <div class="months" aria-label="${cfg.monthWord}">
-      ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<span class="${d.peak_months.includes(m) ? 'on' : ''}">${m}월</span>`).join('')}
+    ${(() => {
+      const fullYear = d.months_covered >= FULL_YEAR_MONTHS;
+      const months = fullYear ? d.peak_months : d.season_months;
+      if (!months || !months.length) return '';
+      return `
+    <div class="months" aria-label="${fullYear ? cfg.monthWord : '제철'}">
+      ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<span class="${months.includes(m) ? 'on' : ''}">${m}월</span>`).join('')}
     </div>
-    <p class="fineprint" style="margin:-16px 0 16px">${cfg.monthWord} — 받아 둔 ${d.months_covered}개월 치 거래량 기준</p>` : ''}
+    <p class="fineprint" style="margin:-16px 0 16px">${fullYear ? `${cfg.monthWord} — 받아 둔 ${d.months_covered}개월 치 거래량 기준` : '제철 — 널리 알려진 시기예요'}</p>`;
+    })()}
     <div class="shop-links">
       <span class="shop-links-title">사러 가기</span>
       ${SHOPS.map(([name, url]) => `<a class="shop-link" href="${url(searchName)}" target="_blank" rel="noopener noreferrer">${name} ↗</a>`).join('')}

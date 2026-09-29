@@ -1,4 +1,7 @@
-"""도매·위판 품목의 이모지와 이야기 (data/auction_notes.csv, | 구분).
+"""도매·위판 품목의 이모지, 이야기, 제철 달 (data/auction_notes.csv, | 구분).
+
+제철 달은 사람이 적은 값이다. 받아 둔 경매 자료로 계산한 "주로 거래되는 달"은 1년치가
+쌓이기 전에는 그 기간에 몰려(9월 하루치면 냉이도 9월) 믿을 수 없어서, 그동안은 이걸 보여준다.
 
 사람이 손으로 쓴 글이다. 없는 품목은 분류별 기본 이모지만 붙는다.
 """
@@ -21,8 +24,10 @@ class Notes:
             # "갈치류" → "갈치", "홍합(섭조개)" → "홍합"으로 한 번 더 찾는다
             base = name.split("(")[0].removesuffix("류").strip()
             note = self.notes.get((kind, base))
+        months = [int(m) for m in ((note or {}).get("months") or "").split(",") if m.strip()]
         return {"emoji": (note or {}).get("emoji") or DEFAULT_EMOJI.get(kind, ""),
-                "story": (note or {}).get("story", "")}
+                "story": (note or {}).get("story", ""),
+                "season_months": months}  # 널리 알려진 제철. 모르면 빈 목록
 
 
 def load_notes(data_dir: Path) -> Notes:
