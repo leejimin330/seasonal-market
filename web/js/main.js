@@ -43,23 +43,59 @@ const session = {
   },
 };
 
+// 오른쪽 위 메뉴는 ☰ 하나로 모은다. 크레딧 잔액만 밖에 남긴다 — 유료 기능을 쓸 때 바로 보여야 한다.
 function drawNav() {
-  const fishLink = '<a href="#/produce">🥬 농산물 도매</a><a href="#/fish">🐟 수산물 시세</a>';
-  if (session.user) {
-    nav.innerHTML = `${fishLink}
-      ${session.isAdmin ? '<a href="#/admin">관리자</a>' : ''}
-      <a class="credit-pill num" href="#/me" title="내 크레딧">🪙 ${session.credits}</a>
-      <button type="button" data-logout>로그아웃</button>`;
-    nav.querySelector('[data-logout]').addEventListener('click', async () => {
-      await api.logout();
-      session.set({ user: null, credits: 0, is_admin: false });
-      session.toast('로그아웃했어요.');
-      route();
-    });
-  } else {
-    nav.innerHTML = `${fishLink}<a href="#/login">로그인</a><a class="credit-pill" href="#/signup">가입하고 크레딧 받기</a>`;
-  }
+  const links = [
+    ['#/', '🏠 제철 장바구니'],
+    ['#/produce', '🥬 농산물 도매 시세'],
+    ['#/fish', '🐟 수산물 산지 시세'],
+  ];
+  const account = session.user
+    ? [['#/me', `🪙 내 크레딧 (${session.credits})`], ...(session.isAdmin ? [['#/admin', '⚙️ 관리자']] : [])]
+    : [['#/login', '로그인'], ['#/signup', '가입하고 크레딧 받기']];
+  nav.innerHTML = `
+    ${session.user ? `<a class="credit-pill num" href="#/me" title="내 크레딧">🪙 ${session.credits}</a>` : ''}
+    <div class="menu">
+      <button type="button" class="menu-toggle" aria-expanded="false" aria-controls="menu-panel" aria-label="메뉴 열기">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="menu-panel" id="menu-panel" hidden>
+        ${session.user ? `<div class="menu-user">${session.user}님</div>` : ''}
+        ${links.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}
+        <hr>
+        ${account.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}
+        ${session.user ? '<button type="button" data-logout>로그아웃</button>' : ''}
+      </div>
+    </div>`;
+
+  const toggle = nav.querySelector('.menu-toggle');
+  const panel = nav.querySelector('.menu-panel');
+  const setOpen = (open) => {
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+    if (open) panel.querySelector('a, button')?.focus();
+  };
+  toggle.addEventListener('click', (e) => { e.stopPropagation(); setOpen(panel.hidden); });
+  panel.addEventListener('click', (e) => { if (e.target.closest('a')) setOpen(false); });
+  panel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { setOpen(false); toggle.focus(); } });
+  nav.querySelector('[data-logout]')?.addEventListener('click', async () => {
+    setOpen(false);
+    await api.logout();
+    session.set({ user: null, credits: 0, is_admin: false });
+    session.toast('로그아웃했어요.');
+    route();
+  });
 }
+
+// 메뉴 바깥을 누르면 닫는다. drawNav가 다시 그려도 한 번만 걸리게 문서에 건다.
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('menu-panel');
+  if (panel && !panel.hidden && !e.target.closest('.menu')) {
+    panel.hidden = true;
+    document.querySelector('.menu-toggle')?.setAttribute('aria-expanded', 'false');
+  }
+});
 
 function drawStatus(status) {
   const labels = { at: '한국농수산식품유통공사(aT) 소매가격 조사', sample: '샘플 데이터' };

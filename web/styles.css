@@ -106,6 +106,25 @@ input { font: inherit; }
 .topnav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .topnav a, .topnav button { text-decoration: none; font-size: 14px; color: var(--ink-2); background: none; border: 0; padding: 6px 8px; border-radius: 8px; }
 .topnav a:hover, .topnav button:hover { background: var(--surface-2); color: var(--ink); }
+.menu { position: relative; }
+.menu-toggle {
+  width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); display: inline-flex; align-items: center; justify-content: center;
+}
+.menu-toggle:hover, .menu-toggle[aria-expanded="true"] { border-color: var(--brand); color: var(--brand); }
+.menu-panel {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; min-width: 220px;
+  display: flex; flex-direction: column; padding: 8px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
+}
+.menu-panel[hidden] { display: none; }
+.menu-panel a, .menu-panel button {
+  display: block; text-align: left; padding: 10px 12px !important; border-radius: 8px !important;
+  color: var(--ink) !important; font-size: 15px !important; background: none; border: 0; width: 100%;
+}
+.menu-panel a:hover, .menu-panel button:hover { background: var(--surface-2) !important; }
+.menu-panel hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.menu-user { padding: 6px 12px 8px; font-size: 13px; color: var(--ink-3); }
 .credit-pill {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--gold-bg); color: var(--gold) !important; font-weight: 700;
