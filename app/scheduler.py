@@ -73,3 +73,14 @@ async def _collect_once(prices, fish=None) -> None:
         log.info("과거 가격 수집: %s", result)
     except Exception:
         log.exception("과거 가격 수집 실패")
+
+
+async def run_every(job, seconds: float, label: str) -> None:
+    """켜자마자 한 번, 그 뒤 seconds마다. 실패해도 다음 차례에 다시 한다."""
+    while True:
+        try:
+            result = await asyncio.to_thread(job)
+            log.info("%s 수집: %s", label, result)
+        except Exception:
+            log.exception("%s 수집 실패", label)
+        await asyncio.sleep(seconds)

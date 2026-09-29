@@ -53,6 +53,8 @@ COLLECT_HOUR = int(os.environ.get("SEASONAL_COLLECT_HOUR", "5"))
 RECENT_DAYS = int(os.environ.get("SEASONAL_RECENT_DAYS", "400"))
 # 평년가 계산에 쓰는 햇수. KAMIS와 같이 5년 중 최고·최저를 뺀 3년 평균.
 NORMAL_YEARS = int(os.environ.get("SEASONAL_NORMAL_YEARS", "5"))
+# 농산물 도매 경매를 다시 받는 주기(초). 오늘 자료만 주는 API라 자주 받아 오늘 치를 채운다.
+PRODUCE_INTERVAL = float(os.environ.get("SEASONAL_PRODUCE_INTERVAL", str(3 * 3600)))
 # 판매처 유형별 비교를 남겨두는 기간(일).
 BREAKDOWN_DAYS = int(os.environ.get("SEASONAL_BREAKDOWN_DAYS", "30"))
 

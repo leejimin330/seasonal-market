@@ -19,14 +19,15 @@ from fastapi.staticfiles import StaticFiles
 from app import auth, config
 from app.catalog import load_catalog
 from app.credits import LocalCredits
-from app.db import Database
+from app.db import AuctionStore, Database
+from app.kat import KatClient, ProduceService
 from app.nutrition import load_nutrition
 from app.places import load_places
 from app.wipan import FishQueries, FishService, WipanClient
 from app.atprice import AtClient
 from app.prices import PriceService
 from app.routes import router
-from app.scheduler import run_daily
+from app.scheduler import run_daily, run_every
 
 WEB_DIR = config.ROOT / "web"
 DAY = 24 * 3600
@@ -49,6 +50,7 @@ def create_app(
     data_dir: Path = config.DATA_DIR,
     at: AtClient | None = None,
     wipan: WipanClient | None = None,
+    kat: KatClient | None = None,
     admins: frozenset[str] = config.ADMIN_USERS,
     secret: str | None = None,
     clock=time.time,
@@ -57,17 +59,21 @@ def create_app(
     db = Database(db_path)
     catalog = load_catalog(data_dir)
     prices = PriceService(db, catalog, at, clock=clock)
-    fish = FishService(db, wipan, clock=clock)
+    fish = FishService(AuctionStore(db, "fish"), wipan, clock=clock)
+    produce = ProduceService(AuctionStore(db, "produce"), kat, clock=clock)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task = None
+        tasks = []
         if run_scheduler:
-            task = asyncio.create_task(
+            tasks.append(asyncio.create_task(
                 run_daily(prices, db, hour=config.COLLECT_HOUR, backup_dir=data_dir / "backups", fish=fish)
-            )
+            ))
+            if produce.enabled:
+                # 도매 경매는 오늘 자료만 주니, 몇 시간마다 다시 받아 오늘 치를 채운다.
+                tasks.append(asyncio.create_task(run_every(produce.collect, config.PRODUCE_INTERVAL, "농산물 도매")))
         yield
-        if task:
+        for task in tasks:
             task.cancel()
         db.close()
 
@@ -78,7 +84,9 @@ def create_app(
     state.nutrition = load_nutrition(data_dir)
     state.places = load_places(data_dir)
     state.fish = fish
-    state.fish_queries = FishQueries(db, state.nutrition)
+    state.fish_queries = FishQueries(AuctionStore(db, "fish"), state.nutrition)
+    state.produce = produce
+    state.produce_queries = FishQueries(AuctionStore(db, "produce"), state.nutrition)
     state.prices = prices
     state.credits = LocalCredits(
         db,
@@ -115,7 +123,8 @@ def build_default_app() -> FastAPI:
     at = AtClient(config.DATA_GO_KR_KEY) if config.at_enabled() else None
     # 위판 API도 같은 공공데이터포털 키를 쓴다 (활용신청은 따로 해야 한다).
     wipan = WipanClient(config.DATA_GO_KR_KEY) if config.at_enabled() else None
-    return create_app(at=at, wipan=wipan)
+    kat = KatClient(config.DATA_GO_KR_KEY) if config.at_enabled() else None
+    return create_app(at=at, wipan=wipan, kat=kat)
 
 
 

@@ -91,6 +91,32 @@ CREATE TABLE IF NOT EXISTS fish_days (
     fetched_at REAL NOT NULL
 );
 
+-- 농산물 도매시장 경매가 (전국 공영도매시장 실시간 경매정보). fish_daily와 같은 모양이고,
+-- state 칸에는 품종, category 칸에는 부류(과실류·엽경채류 …)가 들어간다.
+CREATE TABLE IF NOT EXISTS produce_daily (
+    code          TEXT NOT NULL,
+    state         TEXT NOT NULL,
+    date          TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    amount        INTEGER NOT NULL,
+    weight        REAL NOT NULL,
+    n             INTEGER NOT NULL,
+    markets       INTEGER NOT NULL,
+    min_kg        INTEGER,
+    max_kg        INTEGER,
+    regions       TEXT NOT NULL,
+    market_prices TEXT NOT NULL,
+    category      TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (code, state, date)
+);
+CREATE INDEX IF NOT EXISTS idx_produce_date ON produce_daily(date);
+
+CREATE TABLE IF NOT EXISTS produce_days (
+    date       TEXT PRIMARY KEY,
+    rows       INTEGER NOT NULL,
+    fetched_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -117,6 +143,10 @@ class Database:
             self._conn.execute("PRAGMA journal_mode = WAL")
         self._lock = threading.RLock()
         self._conn.executescript(SCHEMA)
+        # 예전 DB에는 fish_daily.category가 없다.
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(fish_daily)")}
+        if "category" not in columns:
+            self._conn.execute("ALTER TABLE fish_daily ADD COLUMN category TEXT NOT NULL DEFAULT ''")
 
     def close(self) -> None:
         self._conn.close()
@@ -331,29 +361,39 @@ class Database:
         with self.transaction() as conn:
             conn.execute("DELETE FROM price_breakdown WHERE source = ?", (source,))
 
-    # ── 수산물 산지 위판가 ──────────────────────────────────
+    # ── 경매가 (수산물 위판 fish / 농산물 도매 produce) ─────────
 
-    def fish_days(self) -> set[str]:
-        return {row["date"] for row in self._query("SELECT date FROM fish_days")}
+    AUCTION_TABLES = ("fish", "produce")
 
-    def put_fish_day(self, day: str, groups: list[dict], rows: int, now: float) -> None:
+    def _auction(self, table: str) -> str:
+        if table not in self.AUCTION_TABLES:  # 표 이름은 SQL에 그대로 들어가니 정해진 것만
+            raise ValueError(table)
+        return table
+
+    def fish_days(self, table: str = "fish") -> set[str]:
+        t = self._auction(table)
+        return {row["date"] for row in self._query(f"SELECT date FROM {t}_days")}
+
+    def put_fish_day(self, day: str, groups: list[dict], rows: int, now: float, table: str = "fish") -> None:
+        t = self._auction(table)
         with self.transaction() as conn:
-            conn.execute("DELETE FROM fish_daily WHERE date = ?", (day,))
+            conn.execute(f"DELETE FROM {t}_daily WHERE date = ?", (day,))
             conn.executemany(
-                "INSERT INTO fish_daily (code, state, date, name, amount, weight, n, markets, min_kg, max_kg,"
-                " regions, market_prices) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO {t}_daily (code, state, date, name, amount, weight, n, markets, min_kg, max_kg,"
+                " regions, market_prices, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (g["code"], g["state"], day, g["name"], g["amount"], g["weight"], g["n"], g["markets"],
                      g["min_kg"], g["max_kg"], json.dumps(g["regions"], ensure_ascii=False),
-                     json.dumps(g["market_prices"], ensure_ascii=False))
+                     json.dumps(g["market_prices"], ensure_ascii=False), g.get("category", ""))
                     for g in groups
                 ],
             )
-            conn.execute("INSERT OR REPLACE INTO fish_days (date, rows, fetched_at) VALUES (?, ?, ?)",
+            conn.execute(f"INSERT OR REPLACE INTO {t}_days (date, rows, fetched_at) VALUES (?, ?, ?)",
                          (day, rows, now))
 
-    def fish_rows(self, since: str, code: str | None = None) -> list[dict]:
-        sql = "SELECT * FROM fish_daily WHERE date >= ?"
+    def fish_rows(self, since: str, code: str | None = None, table: str = "fish") -> list[dict]:
+        t = self._auction(table)
+        sql = f"SELECT * FROM {t}_daily WHERE date >= ?"
         params: tuple = (since,)
         if code:
             sql += " AND code = ?"
@@ -366,16 +406,19 @@ class Database:
             rows.append(item)
         return rows
 
-    def fish_totals(self) -> list[dict]:
-        """전체 기간의 어종 × 상태 × 날짜 합계. 목록용이라 무거운 JSON 칸은 읽지 않는다."""
-        rows = self._query("SELECT code, state, name, date, amount, weight FROM fish_daily ORDER BY date")
+    def fish_totals(self, table: str = "fish") -> list[dict]:
+        """전체 기간의 합계. 목록용이라 무거운 JSON 칸은 읽지 않는다."""
+        t = self._auction(table)
+        rows = self._query(f"SELECT code, state, name, date, amount, weight, category FROM {t}_daily ORDER BY date")
         return [dict(row) for row in rows]
 
-    def fish_day_count(self) -> int:
-        return self._query("SELECT COUNT(*) AS n FROM fish_days")[0]["n"]
+    def fish_day_count(self, table: str = "fish") -> int:
+        t = self._auction(table)
+        return self._query(f"SELECT COUNT(*) AS n FROM {t}_days")[0]["n"]
 
-    def fish_latest_date(self) -> str | None:
-        rows = self._query("SELECT MAX(date) AS date FROM fish_daily")
+    def fish_latest_date(self, table: str = "fish") -> str | None:
+        t = self._auction(table)
+        rows = self._query(f"SELECT MAX(date) AS date FROM {t}_daily")
         return rows[0]["date"] if rows else None
 
     def get_meta(self, key: str) -> str | None:
@@ -393,3 +436,30 @@ class Database:
                 self._conn.backup(dest)
             finally:
                 dest.close()
+
+
+class AuctionStore:
+    """경매 표 하나(fish 또는 produce)에 묶인 DB. 조회·수집 코드는 표 이름을 몰라도 된다."""
+
+    def __init__(self, db: Database, table: str):
+        db._auction(table)
+        self.db = db
+        self.table = table
+
+    def fish_days(self):
+        return self.db.fish_days(table=self.table)
+
+    def put_fish_day(self, day, groups, rows, now):
+        return self.db.put_fish_day(day, groups, rows, now, table=self.table)
+
+    def fish_rows(self, since, code=None):
+        return self.db.fish_rows(since, code, table=self.table)
+
+    def fish_totals(self):
+        return self.db.fish_totals(table=self.table)
+
+    def fish_day_count(self):
+        return self.db.fish_day_count(table=self.table)
+
+    def fish_latest_date(self):
+        return self.db.fish_latest_date(table=self.table)

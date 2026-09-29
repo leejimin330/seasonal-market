@@ -174,6 +174,20 @@ def fish_detail(request: Request, code: str, state: str | None = None):
     return detail
 
 
+@router.get("/produce")
+def produce_items(request: Request):
+    """농산물 도매 경락가 — 품목(품종별) 목록. 무료."""
+    return request.app.state.produce_queries.species()
+
+
+@router.get("/produce/{code}")
+def produce_detail(request: Request, code: str, state: str | None = None):
+    detail = request.app.state.produce_queries.detail(code, state)
+    if detail is None:
+        raise HTTPException(404, "이 품목은 도매 경매 기록이 없습니다.")
+    return detail
+
+
 # ── 유료 ────────────────────────────────────────────────────
 
 @router.post("/items/{item_id}/where")

@@ -263,7 +263,8 @@ def _history(totals: list[dict]) -> dict[tuple, dict]:
             by_month[int(r["date"][5:7])] += r["weight"]
         la, lw = _sum(last_week)
         result[key] = {
-            "name": rows[-1]["name"], "last_date": last, "last_kg": _kg(la, lw),
+            "name": rows[-1]["name"], "category": rows[-1].get("category", ""), "last_date": last,
+            "last_kg": _kg(la, lw),
             "total_weight": round(sum(r["weight"] for r in rows)),
             "peak_months": _peak_months(by_month),
         }
@@ -331,6 +332,7 @@ class FishQueries:
                 "weight": round(ww), "markets": max(r["markets"] for r in week),
                 "regions": [r["name"] for r in regions[:2]],
                 "peak_months": history.get((code, state), {}).get("peak_months", []),
+                "category": history.get((code, state), {}).get("category", ""),
             })
         result.sort(key=lambda s: -s["weight"])
 
@@ -365,6 +367,7 @@ class FishQueries:
 
         return {
             "code": code, "name": name, "state": state, "states": states, "latest": latest,
+            "category": rows[-1].get("category", ""),
             "kg": _kg(wa, ww), "weight": round(ww), "min_kg": min(r["min_kg"] for r in week),
             "max_kg": max(r["max_kg"] for r in week),
             "series": [{"date": r["date"], "price": _kg(r["amount"], r["weight"]), "weight": r["weight"],

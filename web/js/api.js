@@ -38,6 +38,8 @@ export const api = {
   where: (id) => request('POST', `/items/${encodeURIComponent(id)}/where`),
   fish: () => request('GET', '/fish'),
   fishDetail: (code, state) => request('GET', `/fish/${encodeURIComponent(code)}${state ? `?state=${encodeURIComponent(state)}` : ''}`),
+  produce: () => request('GET', '/produce'),
+  produceDetail: (code, state) => request('GET', `/produce/${encodeURIComponent(code)}${state ? `?state=${encodeURIComponent(state)}` : ''}`),
   me: () => request('GET', '/me'),
   ledger: () => request('GET', '/me/ledger'),
   signup: (user_id, password) => request('POST', '/signup', { user_id, password }),

@@ -364,9 +364,62 @@ function renderWhere(body, data) {
     <p class="fineprint">${esc(data.date)} 한국농수산식품유통공사(aT) 소매가격 조사 기준, 조사처 ${data.n}곳. 조사처 이름은 aT가 익명으로 공개해서 유형까지만 보여드려요.</p>`;
 }
 
-// ── 수산물 산지 시세 ─────────────────────────────────────────
+// ── 경매 시세 (수산물 산지 위판 / 농산물 도매) ─────────────────
+//
+// 두 화면은 모양이 같고 글과 데이터 출처만 다르다. AUCTIONS에 차이를 모아 둔다.
+// 목록의 "state"는 수산물에선 활어·선어 같은 상태, 농산물에선 품종이다.
 
-const fishState = { query: '', state: '전체', sort: 'weight' };
+const PRODUCE_GROUPS = {
+  과일: ['과실류', '과일과채류', '수실류'],
+  채소: ['엽경채류', '과채류', '조미채소류', '양채류', '근채류', '서류'],
+  버섯: ['버섯류'],
+  산나물: ['산채류'],
+};
+
+const AUCTIONS = {
+  fish: {
+    path: 'fish',
+    title: '수산물 산지 시세',
+    back: '← 수산물 시세',
+    eyebrow: '전국 수협 위판장',
+    unitWord: '어종',
+    desc: `어민이 위판장 경매에서 판 kg당 가격이에요. 마트 소매가보다 훨씬 싸고, 유통을 거치며 값이 붙어요.<br>
+      쥐치·쏨뱅이·물메기처럼 마트 조사에 없는 어종도 여기서 볼 수 있어요.`,
+    placeholder: '어종 검색 (예: 쥐치, 볼락)',
+    chips: [['전체', null], ...['활어', '선어', '냉동', '건어'].map((s) => [s, (x) => x.state === s])],
+    priceLabel: '산지 위판가',
+    originTitle: '어디서 잡혔나',
+    marketTitle: '위판장별 가격',
+    monthWord: '주로 잡히는 달',
+    source: '해양수산부 위판장별 위탁판매 현황 (공공데이터포털). 위판가는 산지 경매가라 소매가와 다릅니다.',
+    list: () => api.fish(),
+    detail: (code, state) => api.fishDetail(code, state),
+  },
+  produce: {
+    path: 'produce',
+    title: '농산물 도매 시세',
+    back: '← 농산물 도매 시세',
+    eyebrow: '전국 공영도매시장 경매',
+    unitWord: '품목',
+    desc: `가락시장 등 전국 공영도매시장 경매에서 낙찰된 kg당 가격이에요. 소매가보다 싸고, 유통을 거치며 값이 붙어요.<br>
+      가지·부추·무화과·연근처럼 소매 조사에 없는 품목도, 품종별로 볼 수 있어요.`,
+    placeholder: '품목 검색 (예: 무화과, 연근)',
+    chips: [['전체', null], ...Object.entries(PRODUCE_GROUPS).map(([label, cats]) => [label, (x) => cats.includes(x.category)])],
+    priceLabel: '도매 경락가',
+    originTitle: '어디서 왔나',
+    marketTitle: '도매시장별 가격',
+    monthWord: '주로 거래되는 달',
+    source: '한국농수산식품유통공사 전국 공영도매시장 실시간 경매정보 (공공데이터포털). 오늘 자료만 제공돼, 서버가 켜져 있던 날부터 쌓입니다.',
+    list: () => api.produce(),
+    detail: (code, state) => api.produceDetail(code, state),
+  },
+};
+
+const listState = {
+  fish: { query: '', chip: '전체', sort: 'weight' },
+  produce: { query: '', chip: '전체', sort: 'weight' },
+};
+
 // 카드에는 시·도 이름을 줄여 쓴다 ("전라남도" → "전남"). 지도에는 원래 이름이 필요해 화면에서만 줄인다.
 const SHORT_PROVINCE = {
   서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주', 대전광역시: '대전',
@@ -374,40 +427,47 @@ const SHORT_PROVINCE = {
   전라북도: '전북', 전라남도: '전남', 경상북도: '경북', 경상남도: '경남', 제주특별자치도: '제주',
 };
 const shortProvince = (name) => SHORT_PROVINCE[name] || name;
-const STATE_CHIPS = ['전체', '활어', '선어', '냉동', '건어'];
 const changeBadge = (pct) => (pct == null ? '<span class="delta flat">비교 자료 없음</span>'
   : Math.abs(pct) < 1 ? '<span class="delta flat">지난주와 비슷</span>'
     : pct < 0 ? `<span class="delta down">▼ 지난주보다 ${Math.abs(pct)}%</span>`
       : `<span class="delta up">▲ 지난주보다 ${pct}%</span>`);
 
-// 1~12월 중 주로 잡히는 달을 칠한 작은 막대. 제목(title)에 달 이름을 적어 색만으로 전달하지 않는다.
-function monthStrip(months) {
+// 1~12월 중 주로 잡히는(거래되는) 달을 칠한 작은 막대. 제목에 달 이름을 적어 색만으로 전달하지 않는다.
+function monthStrip(months, word) {
   if (!months || !months.length) return '';
   const on = new Set(months);
-  return `<div class="month-strip" title="주로 잡히는 달: ${months.map((m) => `${m}월`).join(', ')}" aria-label="주로 잡히는 달: ${months.map((m) => `${m}월`).join(', ')}">
+  const names = months.map((m) => `${m}월`).join(', ');
+  return `<div class="month-strip" title="${word}: ${names}" aria-label="${word}: ${names}">
     ${Array.from({ length: 12 }, (_, i) => `<i class="${on.has(i + 1) ? 'on' : ''}"></i>`).join('')}
     <span>${months.length <= 4 ? months.map((m) => `${m}월`).join('·') : `${months[0]}~${months[months.length - 1]}월 중`}</span>
   </div>`;
 }
 
-export async function fishListView(view) {
+export const fishListView = (view) => auctionListView(view, 'fish');
+export const fishDetailView = (view, code, state) => auctionDetailView(view, 'fish', code, state);
+export const produceListView = (view) => auctionListView(view, 'produce');
+export const produceDetailView = (view, code, state) => auctionDetailView(view, 'produce', code, state);
+
+async function auctionListView(view, kind) {
+  const cfg = AUCTIONS[kind];
+  const st = listState[kind];
   view.innerHTML = '<p class="empty">불러오는 중…</p>';
-  const { latest, species, quiet, months_covered: covered } = await api.fish();
+  const { latest, species, quiet, months_covered: covered } = await cfg.list();
   if (!latest) {
-    view.innerHTML = `<h1 class="page-title">수산물 산지 시세</h1>
-      <p class="empty">아직 위판 자료를 받는 중이에요. 잠시 후 다시 열어 주세요.</p>`;
+    view.innerHTML = `<h1 class="page-title">${cfg.title}</h1>
+      <p class="empty">아직 자료를 받는 중이에요. 잠시 후 다시 열어 주세요.</p>`;
     return;
   }
+  const href = (s) => `#/${cfg.path}/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}`;
   view.innerHTML = `
     <section class="page-head">
-      <div class="eyebrow">전국 수협 위판장 · ${esc(latest)} 기준 최근 7일</div>
-      <h1 class="page-title">수산물 산지 시세 <small>지금 거래 중 ${species.length} · 뜸한 어종 ${quiet.length}</small></h1>
-      <p class="page-desc">어민이 위판장 경매에서 판 kg당 가격이에요. 마트 소매가보다 훨씬 싸고, 유통을 거치며 값이 붙어요.<br>
-        쥐치·쏨뱅이·물메기처럼 마트 조사에 없는 어종도 여기서 볼 수 있어요.</p>
+      <div class="eyebrow">${cfg.eyebrow} · ${esc(latest)} 기준 최근 7일</div>
+      <h1 class="page-title">${cfg.title} <small>지금 거래 중 ${species.length} · 뜸한 ${cfg.unitWord} ${quiet.length}</small></h1>
+      <p class="page-desc">${cfg.desc}</p>
     </section>
     <div class="controls">
-      <input class="search" type="search" placeholder="어종 검색 (예: 쥐치, 볼락)" value="${esc(fishState.query)}" aria-label="어종 검색">
-      ${STATE_CHIPS.map((s) => `<button class="chip" data-state="${s}" aria-pressed="${fishState.state === s}">${s}</button>`).join('')}
+      <input class="search" type="search" placeholder="${cfg.placeholder}" value="${esc(st.query)}" aria-label="${cfg.unitWord} 검색">
+      ${cfg.chips.map(([label]) => `<button class="chip" data-chip="${label}" aria-pressed="${st.chip === label}">${label}</button>`).join('')}
       <span class="spacer"></span>
       <select class="chip" data-sort aria-label="정렬">
         <option value="weight">거래량 많은 순</option>
@@ -416,93 +476,96 @@ export async function fishListView(view) {
         <option value="name">이름순</option>
       </select>
     </div>
-    <div class="grid" id="fish-grid"></div>
-    <h2 class="section-title quiet-title">요즘 거래가 뜸한 어종 <small>최근 7일 거래가 적거나 없어요 · 마지막 거래일 순</small></h2>
+    <div class="grid" id="auction-grid"></div>
+    <h2 class="section-title quiet-title">요즘 거래가 뜸한 ${cfg.unitWord} <small>최근 7일 거래가 적거나 없어요 · 마지막 거래일 순</small></h2>
     <div class="grid" id="quiet-grid"></div>
-    <p class="fineprint">"주로 잡히는 달"은 받아 둔 ${covered}개월 치 위판 자료로 계산했어요. 1년치가 쌓이면 더 정확해져요.</p>
-    <p class="fineprint">출처: 해양수산부 위판장별 위탁판매 현황 (공공데이터포털). 한 주 거래가 5kg 미만인 어종은 가격이 튀어서 뺐어요.</p>`;
-  view.querySelector('[data-sort]').value = fishState.sort;
+    <p class="fineprint">"${cfg.monthWord}"은 받아 둔 ${covered}개월 치 자료로 계산했어요. 1년치가 쌓이면 더 정확해져요.</p>
+    <p class="fineprint">출처: ${cfg.source} 한 주 거래가 5kg 미만이면 가격이 튀어서 목록에서 뺐어요.</p>`;
+  view.querySelector('[data-sort]').value = st.sort;
 
-  const grid = view.querySelector('#fish-grid');
+  const grid = view.querySelector('#auction-grid');
   const quietGrid = view.querySelector('#quiet-grid');
   const draw = () => {
-    const q = fishState.query.trim();
-    const list = species.filter((s) => (fishState.state === '전체' || s.state === fishState.state) && (!q || s.name.includes(q)));
-    // 변동률이 없는 어종은 어느 정렬에서든 뒤로 보낸다.
+    const q = st.query.trim();
+    const test = cfg.chips.find(([label]) => label === st.chip)?.[1];
+    const keep = (s) => (!test || test(s)) && (!q || s.name.includes(q) || s.state.includes(q));
+    const list = species.filter(keep);
+    // 변동률이 없는 것은 어느 정렬에서든 뒤로 보낸다.
     const byChange = (sign) => (a, b) => (a.change == null) - (b.change == null) || (a.change - b.change) * sign;
     list.sort({
       weight: (a, b) => b.weight - a.weight,
       down: byChange(1),
       up: byChange(-1),
       name: (a, b) => a.name.localeCompare(b.name, 'ko'),
-    }[fishState.sort]);
+    }[st.sort]);
     grid.innerHTML = list.length ? list.map((s) => `
-      <a class="card" href="#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}">
+      <a class="card" href="${href(s)}">
         <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.kg)}<small>/ kg</small></div>
         <div class="card-foot"><span>${esc(s.regions.map(shortProvince).join('·'))}</span>${changeBadge(s.change)}</div>
-        <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 위판장 ${s.markets}곳</div>
-        ${monthStrip(s.peak_months)}
-      </a>`).join('') : '<p class="empty">조건에 맞는 어종이 없어요.</p>';
+        <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 시장 ${s.markets}곳</div>
+        ${monthStrip(s.peak_months, cfg.monthWord)}
+      </a>`).join('') : `<p class="empty">조건에 맞는 ${cfg.unitWord}이 없어요.</p>`;
 
-    const quietList = quiet.filter((s) => (fishState.state === '전체' || s.state === fishState.state) && (!q || s.name.includes(q)));
-    if (fishState.sort === 'name') quietList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    const quietList = quiet.filter(keep);
+    if (st.sort === 'name') quietList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     quietGrid.innerHTML = quietList.length ? quietList.map((s) => `
-      <a class="card quiet" href="#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}">
+      <a class="card quiet" href="${href(s)}">
         <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.last_kg)}<small>/ kg</small></div>
         <div class="card-sub">마지막 거래 ${esc(s.last_date)} · 그 주 평균</div>
-        ${monthStrip(s.peak_months)}
+        ${monthStrip(s.peak_months, cfg.monthWord)}
       </a>`).join('') : '<p class="empty">없어요.</p>';
   };
   draw();
-  view.querySelector('.search').addEventListener('input', (e) => { fishState.query = e.target.value; draw(); });
-  view.querySelectorAll('[data-state]').forEach((b) => b.addEventListener('click', () => {
-    fishState.state = b.dataset.state;
-    view.querySelectorAll('[data-state]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+  view.querySelector('.search').addEventListener('input', (e) => { st.query = e.target.value; draw(); });
+  view.querySelectorAll('[data-chip]').forEach((b) => b.addEventListener('click', () => {
+    st.chip = b.dataset.chip;
+    view.querySelectorAll('[data-chip]').forEach((x) => x.setAttribute('aria-pressed', x === b));
     draw();
   }));
-  view.querySelector('[data-sort]').addEventListener('change', (e) => { fishState.sort = e.target.value; draw(); });
+  view.querySelector('[data-sort]').addEventListener('change', (e) => { st.sort = e.target.value; draw(); });
 }
 
-export async function fishDetailView(view, code, state) {
+async function auctionDetailView(view, kind, code, state) {
+  const cfg = AUCTIONS[kind];
   view.innerHTML = '<p class="empty">불러오는 중…</p>';
   let d;
   try {
-    d = await api.fishDetail(code, state);
+    d = await cfg.detail(code, state);
   } catch (err) {
-    view.innerHTML = `<a class="back" href="#/fish">← 수산물 시세</a><p class="empty">${esc(err.message)}</p>`;
+    view.innerHTML = `<a class="back" href="#/${cfg.path}">${cfg.back}</a><p class="empty">${esc(err.message)}</p>`;
     return;
   }
   const provinces = d.regions.map((r) => r.name);
   const maxRegion = Math.max(...d.regions.map((r) => r.weight), 1);
   const searchName = encodeURIComponent(d.name.split('(')[0]);
   view.innerHTML = `
-    <a class="back" href="#/fish">← 수산물 시세</a>
+    <a class="back" href="#/${cfg.path}">${cfg.back}</a>
     <section class="detail-head">
       <div>
         <h1>${esc(d.name)}</h1>
         <div class="detail-meta">
-          ${d.states.map((s) => `<a class="chip" href="#/fish/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}">${esc(s)}</a>`).join(' ')}
+          ${d.states.map((s) => `<a class="chip" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}">${esc(s)}</a>`).join(' ')}
         </div>
       </div>
       <div class="now-box">
-        <div class="label">${d.is_quiet ? '요즘 거래가 뜸해요 · 마지막 거래 주 평균' : '산지 위판가 · 최근 7일 평균'} (${esc(d.latest)}까지)</div>
+        <div class="label">${d.is_quiet ? '요즘 거래가 뜸해요 · 마지막 거래 주 평균' : `${cfg.priceLabel} · 최근 7일 평균`} (${esc(d.latest)}까지)</div>
         <div class="price num">${won(d.kg)}<small>/ kg</small></div>
         <div class="card-sub num">거래 ${d.weight.toLocaleString('ko-KR')}kg · 낙찰가 ${won(d.min_kg)} ~ ${won(d.max_kg)}</div>
       </div>
     </section>
     ${d.peak_months.length ? `
-    <div class="months" aria-label="주로 잡히는 달">
+    <div class="months" aria-label="${cfg.monthWord}">
       ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<span class="${d.peak_months.includes(m) ? 'on' : ''}">${m}월</span>`).join('')}
     </div>
-    <p class="fineprint" style="margin:-16px 0 16px">주로 잡히는 달 — 받아 둔 ${d.months_covered}개월 치 위판량 기준</p>` : ''}
+    <p class="fineprint" style="margin:-16px 0 16px">${cfg.monthWord} — 받아 둔 ${d.months_covered}개월 치 거래량 기준</p>` : ''}
     <div class="shop-links">
       <span class="shop-links-title">사러 가기</span>
       ${SHOPS.map(([name, url]) => `<a class="shop-link" href="${url(searchName)}" target="_blank" rel="noopener noreferrer">${name} ↗</a>`).join('')}
     </div>
     <section class="panel origin">
-      <div class="panel-head"><h2>어디서 잡혔나</h2><span class="unlock-note">최근 7일 위판량 기준</span></div>
+      <div class="panel-head"><h2>${cfg.originTitle}</h2><span class="unlock-note">최근 7일 거래량 기준</span></div>
       <div class="origin-body">
         <div class="origin-map" id="origin-map"></div>
         <div class="origin-info">
@@ -517,22 +580,22 @@ export async function fishDetailView(view, code, state) {
         </div>
       </div>
     </section>
-    <section class="panel" id="fish-trend"></section>
+    <section class="panel" id="auction-trend"></section>
     ${d.markets.length ? `
     <section class="panel">
-      <div class="panel-head"><h2>위판장별 가격</h2><span class="unlock-note">최근 7일 · kg당 싼 순</span></div>
+      <div class="panel-head"><h2>${cfg.marketTitle}</h2><span class="unlock-note">최근 7일 · kg당 싼 순</span></div>
       <ol class="region-list">
         ${d.markets.map((m) => `<li><span>${esc(m.name)}</span> <span class="num">${won(m.kg)}/kg <small>(${m.weight.toLocaleString('ko-KR')}kg)</small></span></li>`).join('')}
       </ol>
     </section>` : ''}
     ${d.nutrition ? nutritionPanel({ nutrition: d.nutrition, nutrition_source: '식품의약품안전처 식품영양성분DB (100g 기준)' }) : ''}
-    <p class="fineprint">출처: 해양수산부 위판장별 위탁판매 현황 (공공데이터포털). 위판가는 산지 경매가라 소매가와 다릅니다.</p>`;
+    <p class="fineprint">출처: ${cfg.source}</p>`;
 
   renderKoreaMap(view.querySelector('#origin-map'), { points: [], provinces })
     .catch(() => { view.querySelector('#origin-map').innerHTML = ''; });
-  const trend = view.querySelector('#fish-trend');
-  trend.innerHTML = '<div class="panel-head"><h2>산지 가격 추이</h2></div><div data-body></div>';
-  renderTrend(trend.querySelector('[data-body]'), { series: d.series, price_unit: 'kg', priceLabel: '산지 위판가' });
+  const trend = view.querySelector('#auction-trend');
+  trend.innerHTML = `<div class="panel-head"><h2>${cfg.priceLabel} 추이</h2></div><div data-body></div>`;
+  renderTrend(trend.querySelector('[data-body]'), { series: d.series, price_unit: 'kg', priceLabel: cfg.priceLabel });
 }
 
 // ── 로그인 / 가입 ────────────────────────────────────────────
