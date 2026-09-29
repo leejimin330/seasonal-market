@@ -287,12 +287,18 @@ class FishQueries:
     또는 "regions"(농산물 — 산지 주소). 도매시장 이름은 산지가 아니니 농산물엔 쓰면 안 된다.
     """
 
-    def __init__(self, db, nutrition=None, municipalities=None, city_source: str = "markets"):
+    def __init__(self, db, nutrition=None, municipalities=None, city_source: str = "markets",
+                 notes=None, kind: str = "fish"):
+        self.notes = notes
+        self.kind = kind
         self.db = db
         self.nutrition = nutrition
         self.municipalities = municipalities
         self.city_source = city_source
         self._cache = None
+
+    def _note(self, name: str) -> dict:
+        return self.notes.get(self.kind, name) if self.notes else {"emoji": "", "story": ""}
 
     def _cities(self, rows: list[dict]) -> list[dict]:
         """여러 날의 행을 시·군·구별로 합친다. 못 찾은 곳은 뺀다(시·도 목록에는 남아 있다)."""
@@ -367,6 +373,7 @@ class FishQueries:
                 "weight": round(ww), "markets": max(r["markets"] for r in week),
                 "regions": [r["name"] for r in regions[:2]],
                 "cities": [c["name"] for c in cities[:2]],
+                "emoji": self._note(rows[-1]["name"])["emoji"],
                 "peak_months": history.get((code, state), {}).get("peak_months", []),
                 "category": history.get((code, state), {}).get("category", ""),
             })
@@ -375,7 +382,7 @@ class FishQueries:
         # 지금은 목록 기준(최근 7일 5kg)에 못 미치지만 받은 자료에 나온 적이 있는 어종.
         active = {(s["code"], s["state"]) for s in result}
         quiet = [
-            {"code": code, "state": state, **info}
+            {"code": code, "state": state, **info, "emoji": self._note(info["name"])["emoji"]}
             for (code, state), info in history.items()
             if (code, state) not in active and info["total_weight"] >= MIN_WEEK_WEIGHT
         ]
@@ -410,6 +417,7 @@ class FishQueries:
                         "normal_price": None} for r in rows],
             "regions": regions,
             "cities": self._cities(week)[:12],
+            **self._note(name),
             "markets": markets[:8],
             "peak_months": _history([r for r in rows])[(code, state)]["peak_months"],
             "months_covered": _months_covered(self.db),

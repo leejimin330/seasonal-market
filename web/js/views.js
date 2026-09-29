@@ -568,7 +568,7 @@ async function auctionListView(view, kind) {
     }[st.sort]);
     grid.innerHTML = list.length ? list.map((s) => `
       <a class="card" href="${href(s)}">
-        <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
+        <div class="card-top"><h3><span class="emoji" aria-hidden="true">${s.emoji || ''}</span>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.kg)}<small>/ kg</small></div>
         <div class="card-foot"><span>${esc(placeLabel(s))}</span>${changeBadge(s.change)}</div>
         <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 시장 ${s.markets}곳</div>
@@ -579,7 +579,7 @@ async function auctionListView(view, kind) {
     if (st.sort === 'name') quietList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     quietGrid.innerHTML = quietList.length ? quietList.map((s) => `
       <a class="card quiet" href="${href(s)}">
-        <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
+        <div class="card-top"><h3><span class="emoji" aria-hidden="true">${s.emoji || ''}</span>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.last_kg)}<small>/ kg</small></div>
         <div class="card-sub">마지막 거래 ${esc(s.last_date)} · 그 주 평균</div>
         ${monthStrip(s.peak_months, cfg.monthWord)}
@@ -614,7 +614,8 @@ async function auctionDetailView(view, kind, code, state) {
     <a class="back" href="#/${cfg.path}">${cfg.back}</a>
     <section class="detail-head">
       <div>
-        <h1>${esc(d.name)}</h1>
+        <h1><span class="emoji" aria-hidden="true">${d.emoji || ''}</span>${esc(d.name)}</h1>
+        ${d.story ? `<p class="detail-intro">${esc(d.story)}</p>` : ''}
         <div class="detail-meta">
           ${d.states.map((s) => `<a class="chip" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}">${esc(s)}</a>`).join(' ')}
         </div>
