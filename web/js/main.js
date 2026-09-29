@@ -6,7 +6,8 @@
 import { maybeShowAd } from './adpopup.js';
 import { api } from './api.js';
 import {
-  adminView, authView, fishDetailView, fishListView, itemView, mainView, meView, produceDetailView, produceListView,
+  adminView, authView, fishDetailView, fishListView, homeView, itemView, mainView, meView, produceDetailView,
+  produceListView,
 } from './views.js';
 
 const view = document.getElementById('view');
@@ -46,7 +47,8 @@ const session = {
 // 오른쪽 위 메뉴는 ☰ 하나로 모은다. 크레딧 잔액만 밖에 남긴다 — 유료 기능을 쓸 때 바로 보여야 한다.
 function drawNav() {
   const links = [
-    ['#/', '🏠 제철 장바구니'],
+    ['#/', '🏠 홈'],
+    ['#/season', '🧺 제철 장바구니'],
     ['#/produce', '🥬 농산물 도매 시세'],
     ['#/fish', '🐟 수산물 산지 시세'],
   ];
@@ -125,7 +127,8 @@ async function route() {
     else if (parts[0] === 'login' || parts[0] === 'signup') authView(view, parts[0], session, params.get('next'));
     else if (parts[0] === 'me') await meView(view, session);
     else if (parts[0] === 'admin') await adminView(view, session);
-    else await mainView(view);
+    else if (parts[0] === 'season') await mainView(view);
+    else await homeView(view);
   } catch (err) {
     view.innerHTML = `<p class="empty">${err.message}</p>`;
   }

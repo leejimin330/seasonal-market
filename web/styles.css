@@ -23,6 +23,10 @@
   --grid: #e8e5dc;
   --hero-a: #e6f4ea;
   --hero-b: #fff4dc;
+  --produce-accent: #5b7f12;
+  --produce-soft: #eef5dc;
+  --fish-accent: #1f6fb2;
+  --fish-soft: #e2eff9;
   --shadow: 0 1px 2px rgba(20, 30, 25, .06), 0 4px 16px rgba(20, 30, 25, .05);
   --radius: 14px;
   color-scheme: light;
@@ -54,6 +58,10 @@
     --grid: #2a312d;
     --hero-a: #17291e;
     --hero-b: #2b2615;
+    --produce-accent: #a9cf5a;
+    --produce-soft: #243016;
+    --fish-accent: #7ab8ea;
+    --fish-soft: #16283a;
     --shadow: none;
     color-scheme: dark;
   }
@@ -66,6 +74,7 @@
   --gold: #f3c663; --gold-bg: #3a2f14; --sample: #ffd58a; --sample-bg: #3b2e12;
   --series-price: #3aa874; --series-normal: #8f7cf0; --grid: #2a312d; --shadow: none;
   --hero-a: #17291e; --hero-b: #2b2615;
+  --produce-accent: #a9cf5a; --produce-soft: #243016; --fish-accent: #7ab8ea; --fish-soft: #16283a;
   color-scheme: dark;
 }
 
@@ -133,6 +142,41 @@ input { font: inherit; }
 
 .view { max-width: 1080px; margin: 0 auto; padding: 24px 20px 48px; min-height: 60vh; }
 .footer { text-align: center; color: var(--ink-3); font-size: 12px; padding: 24px 16px 40px; }
+
+/* ── 홈 ── */
+.home-hero {
+  padding: 40px 40px 36px; border-radius: 24px; margin-bottom: 20px;
+  background: linear-gradient(135deg, var(--hero-a), var(--hero-b));
+}
+.home-hero h1 { font-size: 36px; line-height: 1.25; margin: 6px 0 10px; letter-spacing: -.035em; }
+.home-hero p { margin: 0; color: var(--ink-2); max-width: 620px; }
+.home-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.home-stats span { background: var(--surface); border-radius: 999px; padding: 6px 14px; font-size: 14px; color: var(--ink-2); box-shadow: var(--shadow); }
+.home-stats b { color: var(--brand); font-size: 16px; margin-right: 2px; }
+.home-banners { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.home-banner {
+  display: flex; flex-direction: column; gap: 10px; padding: 22px; border-radius: 20px; text-decoration: none;
+  border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow);
+  transition: transform .12s ease, border-color .12s ease;
+}
+.home-banner:hover { transform: translateY(-3px); border-color: var(--banner-accent); }
+.home-banner.season { --banner-accent: var(--brand); --banner-bg: var(--brand-soft); }
+.home-banner.produce { --banner-accent: var(--produce-accent); --banner-bg: var(--produce-soft); }
+.home-banner.fish { --banner-accent: var(--fish-accent); --banner-bg: var(--fish-soft); }
+.home-banner-head { display: flex; align-items: center; gap: 14px; }
+.home-banner-emoji { font-size: 34px; width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: var(--banner-bg); }
+.home-banner h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+.home-banner h2 a { text-decoration: none; }
+.home-banner h2 a:hover { color: var(--banner-accent); }
+.home-banner-head p { margin: 2px 0 0; font-size: 13px; color: var(--ink-3); }
+.home-banner-count { margin: 4px 0 0; color: var(--ink-2); }
+.home-banner-count b { color: var(--banner-accent); font-size: 22px; }
+.home-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.home-preview a { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; text-decoration: none; background: var(--surface-2); font-size: 14px; }
+.home-preview a:hover { background: var(--banner-bg); }
+.home-preview b { color: var(--ink); font-size: 13px; white-space: nowrap; }
+.home-cta { margin-top: auto; font-weight: 700; color: var(--banner-accent); text-decoration: none; }
+.home-cta:hover { text-decoration: underline; }
 
 /* ── 메인 ── */
 .hero-carousel { margin-bottom: 28px; }
@@ -394,6 +438,8 @@ td.right, th.right { text-align: right; }
 }
 
 @media (max-width: 600px) {
+  .home-hero { padding: 26px 20px; }
+  .home-hero h1 { font-size: 26px; }
   .origin-map { flex-basis: 100%; max-width: 280px; margin: 0 auto; }
   .hero-slide { padding: 24px 20px; min-height: 250px; gap: 16px; }
   .hero-item { flex-direction: column; align-items: flex-start; }

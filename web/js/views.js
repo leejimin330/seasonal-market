@@ -41,6 +41,70 @@ function remaining(until) {
 
 const mainState = { group: '전체', seasonOnly: true, sort: 'cheap' };
 
+// ── 홈 ───────────────────────────────────────────────────────
+// 세 화면(제철 소매 · 농산물 도매 · 수산물 산지)으로 가는 입구. 도매·수산 화면이 메뉴 속에 묻혀
+// 잘 안 보인다는 의견으로 만들었다. 각 배너에 대표 품목을 몇 개씩 미리 보여 준다.
+
+export async function homeView(view) {
+  view.innerHTML = '<p class="empty">불러오는 중…</p>';
+  const [items, produce, fish] = await Promise.all([
+    api.items(),
+    api.produce().catch(() => ({ species: [] })),
+    api.fish().catch(() => ({ species: [] })),
+  ]);
+  const month = items.month;
+  const inSeason = items.items.filter((i) => i.in_season && !i.stale);
+  const cheapSeason = inSeason.filter((i) => i.vs_normal != null && i.vs_normal < 0)
+    .sort((a, b) => a.vs_normal - b.vs_normal).slice(0, 4);
+  const uniq = (list) => new Set(list.map((s) => s.name)).size;
+  const topByName = (list, n) => {
+    const seen = new Set();
+    return list.filter((s) => !seen.has(s.name) && seen.add(s.name)).slice(0, n);
+  };
+  const produceTop = topByName(produce.species, 4);
+  const fishTop = topByName(fish.species, 4);
+  const today = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+
+  const preview = (list, href, price) => list.map((s) => `
+    <li><a href="${href(s)}"><span>${s.emoji || ''} ${esc(s.name)}</span><b class="num">${price(s)}</b></a></li>`).join('');
+
+  view.innerHTML = `
+    <section class="home-hero">
+      <div class="eyebrow">${today} · ${month}월의 장바구니</div>
+      <h1>장 보기 전에,<br>지금 싸고 맛있는 제철부터.</h1>
+      <p>마트 소매가부터 도매시장 경매가, 수협 위판장 산지가까지 공공데이터로 매일 모아 보여드려요.</p>
+      <div class="home-stats">
+        <span><b class="num">${inSeason.length}</b>가지 제철</span>
+        <span><b class="num">${uniq(produce.species)}</b>개 도매 품목</span>
+        <span><b class="num">${uniq(fish.species)}</b>종 수산물</span>
+      </div>
+    </section>
+
+    <section class="home-banners">
+      <article class="home-banner season">
+        <div class="home-banner-head"><span class="home-banner-emoji" aria-hidden="true">🧺</span>
+          <div><h2><a href="#/season">제철 장바구니</a></h2><p>소매가 · 평년보다 얼마나 쌀까</p></div></div>
+        <p class="home-banner-count">지금 제철 <b class="num">${inSeason.length}</b>가지</p>
+        <ul class="home-preview">${preview(cheapSeason, (s) => `#/item/${s.id}`, (s) => `▼ ${Math.abs(s.vs_normal)}%`)}</ul>
+        <a class="home-cta" href="#/season">제철 시세 보러 가기 →</a>
+      </article>
+      <article class="home-banner produce">
+        <div class="home-banner-head"><span class="home-banner-emoji" aria-hidden="true">🥬</span>
+          <div><h2><a href="#/produce">농산물 도매 시세</a></h2><p>전국 공영도매시장 경매가</p></div></div>
+        <p class="home-banner-count">오늘 <b class="num">${uniq(produce.species)}</b>개 품목 경매</p>
+        <ul class="home-preview">${preview(produceTop, (s) => `#/produce/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}`, (s) => `${won(s.kg)}/kg`)}</ul>
+        <a class="home-cta" href="#/produce">도매 시세 보러 가기 →</a>
+      </article>
+      <article class="home-banner fish">
+        <div class="home-banner-head"><span class="home-banner-emoji" aria-hidden="true">🐟</span>
+          <div><h2><a href="#/fish">수산물 산지 시세</a></h2><p>전국 수협 위판장 경매가</p></div></div>
+        <p class="home-banner-count"><b class="num">${uniq(fish.species)}</b>종 거래 중</p>
+        <ul class="home-preview">${preview(fishTop, (s) => `#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}`, (s) => `${won(s.kg)}/kg`)}</ul>
+        <a class="home-cta" href="#/fish">산지 시세 보러 가기 →</a>
+      </article>
+    </section>`;
+}
+
 export async function mainView(view) {
   view.innerHTML = '<p class="empty">불러오는 중…</p>';
   const { month, items } = await api.items();
@@ -169,13 +233,13 @@ export async function itemView(view, id, session) {
   try {
     item = await api.item(id);
   } catch (err) {
-    view.innerHTML = `<a class="back" href="#/">← 목록</a><p class="empty">${esc(err.message)}</p>`;
+    view.innerHTML = `<a class="back" href="#/season">← 제철 목록</a><p class="empty">${esc(err.message)}</p>`;
     return;
   }
   const month = new Date().getMonth() + 1;
 
   view.innerHTML = `
-    <a class="back" href="#/">← 목록</a>
+    <a class="back" href="#/season">← 제철 목록</a>
     <section class="detail-head">
       <div>
         <h1><span class="emoji" aria-hidden="true">${item.emoji}</span>${esc(item.name)}</h1>
