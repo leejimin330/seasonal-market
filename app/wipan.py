@@ -281,12 +281,46 @@ def _months_covered(db) -> int:
 
 
 class FishQueries:
-    """화면용 요약. 최신 날짜 기준 최근 7일과 그 전 7일을 비교한다."""
+    """화면용 요약. 최신 날짜 기준 최근 7일과 그 전 7일을 비교한다.
 
-    def __init__(self, db, nutrition=None):
+    city_source: 시·군·구를 어디서 찾나. "markets"(수산물 — 위판장 조합 이름이 곧 항구)
+    또는 "regions"(농산물 — 산지 주소). 도매시장 이름은 산지가 아니니 농산물엔 쓰면 안 된다.
+    """
+
+    def __init__(self, db, nutrition=None, municipalities=None, city_source: str = "markets"):
         self.db = db
         self.nutrition = nutrition
+        self.municipalities = municipalities
+        self.city_source = city_source
         self._cache = None
+
+    def _cities(self, rows: list[dict]) -> list[dict]:
+        """여러 날의 행을 시·군·구별로 합친다. 못 찾은 곳은 뺀다(시·도 목록에는 남아 있다)."""
+        if not self.municipalities:
+            return []
+        total: dict[str, dict] = {}
+        for row in rows:
+            if self.city_source == "regions":
+                pairs = [(self.municipalities.from_address(name), aw) for name, aw in row["regions"].items()]
+            else:
+                # 조합 이름에 같은 지명이 여럿 걸리면(고성) 그날 가장 많이 들어온 시·도로 가린다
+                hint = None
+                if row["regions"]:
+                    hint = province_of(max(row["regions"].items(), key=lambda kv: kv[1][1])[0])
+                pairs = [(self.municipalities.from_org_name(name, hint), aw)
+                         for name, aw in row["market_prices"].items()]
+            for place, (amount, weight) in pairs:
+                if not place or weight <= 0:
+                    continue
+                slot = total.setdefault(place["name"], {**place, "amount": 0.0, "weight": 0.0})
+                slot["amount"] += amount
+                slot["weight"] += weight
+        result = [
+            {"name": v["name"], "province": v["province"], "lat": v["lat"], "lon": v["lon"],
+             "kg": _kg(v["amount"], v["weight"]), "weight": round(v["weight"], 1)}
+            for v in total.values()
+        ]
+        return sorted(result, key=lambda c: -c["weight"])
 
     def _windows(self) -> tuple[str, str, str] | None:
         latest = self.db.fish_latest_date()
@@ -326,11 +360,13 @@ class FishQueries:
             pa, pw = _sum(prev)
             kg, prev_kg = _kg(wa, ww), _kg(pa, pw) if pw >= MIN_WEEK_WEIGHT else None
             regions = sorted(_merge(week, "regions"), key=lambda r: -r["weight"])
+            cities = self._cities(week)
             result.append({
                 "code": code, "state": state, "name": rows[-1]["name"], "kg": kg,
                 "change": round((kg / prev_kg - 1) * 100, 1) if prev_kg else None,
                 "weight": round(ww), "markets": max(r["markets"] for r in week),
                 "regions": [r["name"] for r in regions[:2]],
+                "cities": [c["name"] for c in cities[:2]],
                 "peak_months": history.get((code, state), {}).get("peak_months", []),
                 "category": history.get((code, state), {}).get("category", ""),
             })
@@ -373,6 +409,7 @@ class FishQueries:
             "series": [{"date": r["date"], "price": _kg(r["amount"], r["weight"]), "weight": r["weight"],
                         "normal_price": None} for r in rows],
             "regions": regions,
+            "cities": self._cities(week)[:12],
             "markets": markets[:8],
             "peak_months": _history([r for r in rows])[(code, state)]["peak_months"],
             "months_covered": _months_covered(self.db),

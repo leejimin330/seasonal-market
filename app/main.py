@@ -23,6 +23,7 @@ from app.db import AuctionStore, Database
 from app.kat import KatClient, ProduceService
 from app.nutrition import load_nutrition
 from app.places import load_places
+from app.regions import load_municipalities
 from app.wipan import FishQueries, FishService, WipanClient
 from app.atprice import AtClient
 from app.prices import PriceService
@@ -84,9 +85,10 @@ def create_app(
     state.nutrition = load_nutrition(data_dir)
     state.places = load_places(data_dir)
     state.fish = fish
-    state.fish_queries = FishQueries(AuctionStore(db, "fish"), state.nutrition)
+    municipalities = load_municipalities(data_dir)
+    state.fish_queries = FishQueries(AuctionStore(db, "fish"), state.nutrition, municipalities, "markets")
     state.produce = produce
-    state.produce_queries = FishQueries(AuctionStore(db, "produce"), state.nutrition)
+    state.produce_queries = FishQueries(AuctionStore(db, "produce"), state.nutrition, municipalities, "regions")
     state.prices = prices
     state.credits = LocalCredits(
         db,

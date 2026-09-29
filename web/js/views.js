@@ -491,6 +491,10 @@ const SHORT_PROVINCE = {
   전라북도: '전북', 전라남도: '전남', 경상북도: '경북', 경상남도: '경남', 제주특별자치도: '제주',
 };
 const shortProvince = (name) => SHORT_PROVINCE[name] || name;
+// "경북 상주시" → "상주시". 시·군·구를 못 찾은 품목은 시·도 약칭으로.
+const placeLabel = (s) => (s.cities && s.cities.length
+  ? s.cities.map((c) => c.split(' ').slice(1).join(' ') || c).join('·')
+  : s.regions.map(shortProvince).join('·'));
 const changeBadge = (pct) => (pct == null ? '<span class="delta flat">비교 자료 없음</span>'
   : Math.abs(pct) < 1 ? '<span class="delta flat">지난주와 비슷</span>'
     : pct < 0 ? `<span class="delta down">▼ 지난주보다 ${Math.abs(pct)}%</span>`
@@ -566,7 +570,7 @@ async function auctionListView(view, kind) {
       <a class="card" href="${href(s)}">
         <div class="card-top"><h3>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
         <div class="price num">${won(s.kg)}<small>/ kg</small></div>
-        <div class="card-foot"><span>${esc(s.regions.map(shortProvince).join('·'))}</span>${changeBadge(s.change)}</div>
+        <div class="card-foot"><span>${esc(placeLabel(s))}</span>${changeBadge(s.change)}</div>
         <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 시장 ${s.markets}곳</div>
         ${monthStrip(s.peak_months, cfg.monthWord)}
       </a>`).join('') : `<p class="empty">조건에 맞는 ${cfg.unitWord}이 없어요.</p>`;
@@ -602,7 +606,9 @@ async function auctionDetailView(view, kind, code, state) {
     return;
   }
   const provinces = d.regions.map((r) => r.name);
-  const maxRegion = Math.max(...d.regions.map((r) => r.weight), 1);
+  // 시·군·구를 찾았으면 그걸로 순위를 보이고, 못 찾았으면 시·도로.
+  const places = d.cities.length ? d.cities : d.regions;
+  const maxRegion = Math.max(...places.map((r) => r.weight), 1);
   const searchName = encodeURIComponent(d.name.split('(')[0]);
   view.innerHTML = `
     <a class="back" href="#/${cfg.path}">${cfg.back}</a>
@@ -634,15 +640,17 @@ async function auctionDetailView(view, kind, code, state) {
         <div class="origin-map" id="origin-map"></div>
         <div class="origin-info">
           <ul class="rank-list">
-            ${d.regions.slice(0, 6).map((r, n) => `
+            ${places.slice(0, 6).map((r, n) => `
               <li class="${n === 0 ? 'best' : ''}">
                 <span class="rank-name">${esc(r.name)}</span>
                 <span class="bar" aria-hidden="true"><i style="width:${Math.max(4, Math.round((r.weight / maxRegion) * 100))}%"></i></span>
                 <span class="rank-value num"><b>${r.weight.toLocaleString('ko-KR')}kg</b><small>${won(r.kg)}/kg</small></span>
               </li>`).join('')}
           </ul>
+          ${d.cities.length ? `<p class="origin-provinces">${d.regions.slice(0, 5).map((r) => `<span class="badge">${esc(shortProvince(r.name))} ${r.weight.toLocaleString('ko-KR')}kg</span>`).join(' ')}</p>` : ''}
         </div>
       </div>
+      <p class="fineprint">${kind === 'fish' ? '시·군은 위판장 조합 이름으로 찾았어요 (위판장은 배가 들어오는 항구예요).' : '시·군·구는 경매 기록의 산지 주소로 찾았어요.'} 점은 시·군·구 중심 위치예요.</p>
     </section>
     <section class="panel" id="auction-trend"></section>
     ${d.markets.length ? `
@@ -655,7 +663,10 @@ async function auctionDetailView(view, kind, code, state) {
     ${d.nutrition ? nutritionPanel({ nutrition: d.nutrition, nutrition_source: '식품의약품안전처 식품영양성분DB (100g 기준)' }) : ''}
     <p class="fineprint">출처: ${cfg.source}</p>`;
 
-  renderKoreaMap(view.querySelector('#origin-map'), { points: [], provinces })
+  renderKoreaMap(view.querySelector('#origin-map'), {
+    points: d.cities.slice(0, 8).map((c) => ({ name: c.name.split(' ').slice(1).join(' '), lat: c.lat, lon: c.lon })),
+    provinces,
+  })
     .catch(() => { view.querySelector('#origin-map').innerHTML = ''; });
   const trend = view.querySelector('#auction-trend');
   trend.innerHTML = `<div class="panel-head"><h2>${cfg.priceLabel} 추이</h2></div><div data-body></div>`;
