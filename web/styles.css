@@ -645,3 +645,31 @@ td.right, th.right { text-align: right; }
   .topnav { flex-wrap: wrap; }
 }
 .view > .section-title { margin-top: 22px; }
+
+/* ── 여백·간격 점검 보정 (맨 뒤에 둬서 앞의 규칙을 덮는다) ── */
+.panel-head h2 small { margin-left: 8px; }
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; gap: 8px 10px; padding: 10px 16px; }
+  .topnav { display: contents; }
+  .brand { order: 1; margin-right: auto; }
+  .credit-pill { order: 2; }
+  .menu { order: 3; }
+  .search { order: 4; flex: 1 1 140px; }
+  .search input { width: 100%; }
+  .tabs { order: 5; margin: 0; }
+  .view { padding: 16px 16px 40px; }
+
+  .home-hero { padding: 24px 20px; border-radius: 20px; grid-template-columns: 1fr; grid-template-rows: none; }
+  .home-hero > .eyebrow, .home-hero > h1, .home-hero > p { grid-column: 1; grid-row: auto; }
+  .home-hero > .home-stats { grid-column: 1; grid-row: auto; flex-direction: row; flex-wrap: wrap; margin-top: 16px; }
+  .home-hero h1 { font-size: 26px; }
+
+  .top-list a { grid-template-columns: 28px minmax(0, 1fr) auto; row-gap: 6px; }
+  .top-list .top-bar { grid-column: 2 / -1; grid-row: 2; }
+  .top-controls { gap: 8px; }
+  .seg button { padding: 8px 14px; }
+}
+@media (max-width: 560px) {
+  .months { grid-template-columns: repeat(6, 1fr); max-width: none; gap: 6px; }
+  .months span { white-space: nowrap; padding: 8px 0; font-size: 13px; }
+}
