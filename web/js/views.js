@@ -17,7 +17,7 @@ const SHOPS = [
   ['G마켓', (q) => `https://www.gmarket.co.kr/n/search?keyword=${q}`],
 ];
 
-const CATEGORY_GROUP = { 채소: '채소', 버섯: '채소', 과채: '과일', 과일: '과일', 수산: '수산', 축산: '축산', 곡물: '곡물', 견과: '곡물', 기타: '곡물' };
+const CATEGORY_GROUP = { 채소: '채소', 버섯: '채소', 과채: '과일', 과일: '과일', 수산: '수산', 축산: '축산', 가공식품: '가공식품', 곡물: '곡물', 견과: '곡물', 기타: '곡물' };
 // 받침 유무로 이/가를 고른다 ("전통시장이", "대형마트가"). 한글이 아니면 받침 없음으로 본다.
 const iGa = (word) => {
   const code = String(word).charCodeAt(String(word).length - 1) - 0xac00;
@@ -102,7 +102,111 @@ export async function homeView(view) {
         <ul class="home-preview">${preview(fishTop, (s) => `#/fish/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}`, (s) => `${won(s.kg)}/kg`)}</ul>
         <a class="home-cta" href="#/fish">산지 시세 보러 가기 →</a>
       </article>
+    </section>
+    ${homeExtrasHtml(items.items, month)}`;
+  wireHomeExtras(view, items.items, month);
+}
+
+// ── 홈 하단 컨텐츠 ───────────────────────────────────────────
+// 배너만 있으면 허전하다는 의견으로 추가. 모두 이미 있는 소매 품목 데이터로만 만든다.
+
+const HOME_GROUPS = [
+  ['채소', '🥬'], ['과일', '🍎'], ['수산', '🐟'], ['축산', '🥩'], ['곡물', '🌾'], ['가공식품', '🥫'],
+];
+
+function homeExtrasHtml(items, month) {
+  const priced = items.filter((i) => !i.stale && i.price != null && i.vs_normal != null);
+  const down = priced.filter((i) => i.vs_normal < 0).sort((a, b) => a.vs_normal - b.vs_normal).slice(0, 5);
+  const up = priced.filter((i) => i.vs_normal > 0).sort((a, b) => b.vs_normal - a.vs_normal).slice(0, 5);
+  const row = (i, sign) => `
+    <li><a href="#/item/${i.id}"><span>${i.emoji} ${esc(i.name)}</span>
+      <b class="num ${sign < 0 ? 'down' : 'up'}">${sign < 0 ? '▼' : '▲'} ${Math.abs(i.vs_normal)}%</b></a></li>`;
+  const monthButtons = Array.from({ length: 12 }, (_, n) => n + 1).map((m) => `
+    <button class="chip" data-cal="${m}" aria-pressed="${m === month}">${m}월</button>`).join('');
+
+  return `
+    <section class="home-block">
+      <h2 class="section-title">평년 대비 가격 변동 <small>소매가 기준 · 조사된 품목 ${priced.length}개</small></h2>
+      <div class="home-movers">
+        <div class="home-mover"><h3>지금 사기 좋아요</h3>
+          <ul class="home-preview">${down.map((i) => row(i, -1)).join('') || '<li class="empty">없음</li>'}</ul></div>
+        <div class="home-mover"><h3>조금 기다려도 돼요</h3>
+          <ul class="home-preview">${up.map((i) => row(i, 1)).join('') || '<li class="empty">없음</li>'}</ul></div>
+      </div>
+    </section>
+
+    <section class="home-block">
+      <h2 class="section-title">제철 달력 <small>달을 눌러 그달 제철을 확인해요</small></h2>
+      <div class="controls" role="toolbar" aria-label="월 선택">${monthButtons}</div>
+      <div class="home-cal" id="home-cal"></div>
+    </section>
+
+    <section class="home-block" id="home-spot" aria-live="polite"></section>
+
+    <section class="home-block">
+      <h2 class="section-title">종류별로 보기</h2>
+      <div class="home-tiles">
+        ${HOME_GROUPS.map(([g, e]) => `
+          <a class="home-tile" href="#/season" data-group-link="${g}"><span aria-hidden="true">${e}</span>${g}
+            <small>${items.filter((i) => CATEGORY_GROUP[i.category] === g).length}개</small></a>`).join('')}
+      </div>
+    </section>
+
+    <section class="home-block home-guide">
+      <h2 class="section-title">이렇게 만들어졌어요</h2>
+      <div class="home-guide-grid">
+        <div><h3>📊 평년 대비 %</h3><p>최근 5년간 같은 날짜 앞뒤 7일의 가격에서 가장 비싼 값과 싼 값을 빼고 평균을 낸 평년가와 지금 가격을 비교해요.</p></div>
+        <div><h3>🗂 데이터 출처</h3><p>한국농수산식품유통공사 소매가격, 전국 공영도매시장 경매, 해양수산부 위판장 거래, 식약처 영양성분 DB를 공공데이터포털에서 받아와요.</p></div>
+        <div><h3>🪙 크레딧</h3><p>시세와 제철 정보는 모두 무료예요. 가격 변동 추이와 "어디서 사면 쌀까"만 크레딧으로 24시간 열 수 있어요.</p></div>
+      </div>
     </section>`;
+}
+
+function wireHomeExtras(view, items, month) {
+  const cal = view.querySelector('#home-cal');
+  const drawCal = (m) => {
+    const list = items.filter((i) => (i.season_months || []).includes(m));
+    cal.innerHTML = list.length ? list.map((i) => `
+      <a class="home-chip" href="#/item/${i.id}">${i.emoji} ${esc(i.name)}</a>`).join('')
+      : '<p class="empty">이 달 제철로 등록된 품목이 없어요.</p>';
+  };
+  drawCal(month);
+  view.querySelectorAll('[data-cal]').forEach((b) => b.addEventListener('click', () => {
+    view.querySelectorAll('[data-cal]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    drawCal(Number(b.dataset.cal));
+  }));
+
+  view.querySelectorAll('[data-group-link]').forEach((a) => a.addEventListener('click', () => {
+    mainState.group = a.dataset.groupLink;
+    mainState.seasonOnly = false;
+  }));
+
+  // 오늘의 품목: 제철 중인 품목을 날짜로 돌려 가며 고른다.
+  const pool = items.filter((i) => i.in_season && !i.stale).sort((a, b) => a.id.localeCompare(b.id));
+  if (!pool.length) return;
+  const pick = pool[Math.floor(Date.now() / 86400000) % pool.length];
+  const spot = view.querySelector('#home-spot');
+  api.item(pick.id).then((d) => {
+    const nut = (d.nutrition?.values || []).filter((v) => ['kcal', 'fiber', 'potassium', 'calcium'].includes(v.key));
+    spot.innerHTML = `
+      <h2 class="section-title">오늘의 제철 <small>${esc(d.season_note || '')}</small></h2>
+      <article class="home-spot">
+        <div class="home-spot-map" id="home-spot-map" aria-busy="true"></div>
+        <div class="home-spot-body">
+          <h3><a href="#/item/${d.id}">${d.emoji} ${esc(d.name)}</a>
+            ${d.price != null && !d.stale ? `<span class="num">${won(d.price)}<small> / ${esc(d.price_unit)}</small></span>` : ''}</h3>
+          <p>${esc(d.intro || '')}</p>
+          ${d.story ? `<p><b>${d.story_kind === 'tip' ? '알아두면 좋은 점' : '산지 이야기'}</b> ${esc(d.story)}</p>` : ''}
+          ${nut.length ? `<p class="home-spot-nut">${nut.map((v) => `<span>${esc(v.label)} <b class="num">${v.value}${v.unit}</b></span>`).join('')}<small>100g당</small></p>` : ''}
+          ${d.pick ? `<p><b>🛒 고르는 법</b> ${esc(d.pick)}</p>` : ''}
+          <a class="home-cta" href="#/item/${d.id}">${esc(d.name)} 자세히 보기 →</a>
+        </div>
+      </article>`;
+    const mapEl = spot.querySelector('#home-spot-map');
+    if (d.places?.points?.length) {
+      renderKoreaMap(mapEl, d.places).catch(() => mapEl.remove()).finally(() => mapEl.removeAttribute('aria-busy'));
+    } else mapEl.remove();
+  }).catch(() => spot.remove());
 }
 
 export async function mainView(view) {
@@ -128,7 +232,7 @@ export async function mainView(view) {
     </section>` : ''}
     <section>
       <div class="controls" role="toolbar" aria-label="품목 거르기">
-        ${['전체', '채소', '과일', '수산', '축산', '곡물'].map((g) => `<button class="chip" data-group="${g}" aria-pressed="${mainState.group === g}">${g}</button>`).join('')}
+        ${['전체', '채소', '과일', '수산', '축산', '곡물', '가공식품'].map((g) => `<button class="chip" data-group="${g}" aria-pressed="${mainState.group === g}">${g}</button>`).join('')}
         <button class="chip" data-season aria-pressed="${mainState.seasonOnly}">제철만</button>
         <span class="spacer"></span>
         <select class="chip" data-sort aria-label="정렬">

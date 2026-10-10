@@ -476,3 +476,32 @@ td.right, th.right { text-align: right; }
   .rank-list li { grid-template-columns: 1fr auto; }
   .rank-list .bar { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* 홈 하단 컨텐츠 */
+.home-block { margin-top: 30px; }
+.home-movers { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.home-mover { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+.home-mover h3 { margin: 0 0 10px; font-size: 15px; }
+.home-preview b.down { color: var(--cheap); }
+.home-preview b.up { color: var(--pricey); }
+.home-cal { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.home-chip { background: var(--surface); border-radius: 999px; padding: 7px 14px; box-shadow: var(--shadow); text-decoration: none; font-size: 14px; }
+.home-chip:hover { background: var(--brand-soft); }
+.home-spot { display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 20px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+.home-spot-map svg { width: 100%; height: auto; }
+.home-spot-body h3 { margin: 0 0 6px; font-size: 22px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.home-spot-body h3 a { text-decoration: none; }
+.home-spot-body h3 .num { font-size: 16px; color: var(--brand); }
+.home-spot-body p { margin: 0 0 10px; color: var(--ink-2); }
+.home-spot-nut { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.home-spot-nut small { color: var(--ink-3); }
+.home-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.home-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 8px; text-decoration: none; font-weight: 700; }
+.home-tile > span { font-size: 30px; }
+.home-tile small { color: var(--ink-3); font-weight: 500; }
+.home-tile:hover { background: var(--brand-soft); }
+.home-guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.home-guide-grid > div { background: var(--surface-2); border-radius: var(--radius); padding: 16px; }
+.home-guide-grid h3 { margin: 0 0 6px; font-size: 15px; }
+.home-guide-grid p { margin: 0; color: var(--ink-2); font-size: 14px; }
+@media (max-width: 640px) { .home-spot { grid-template-columns: 1fr; } .home-spot-map { max-width: 220px; } }
