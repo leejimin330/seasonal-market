@@ -47,3 +47,14 @@ export function trackOnce(api, kind, key) {
   } catch { /* 저장소를 못 쓰면 그냥 센다 */ }
   api.view(kind, key);
 }
+
+// 가격 알림: "평년보다 N% 이상 싸지면". 서버에 보내지 않고 사이트를 열 때 이 브라우저에서 확인한다.
+export const alerts = {
+  list: () => read('alerts'),
+  get: (key) => read('alerts').find((a) => a.key === key) || null,
+  set(key, pct) {
+    const rest = read('alerts').filter((a) => a.key !== key);
+    write('alerts', pct ? [...rest, { key, pct }] : rest);
+    changed();
+  },
+};

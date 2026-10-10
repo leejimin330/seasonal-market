@@ -599,3 +599,49 @@ td.right, th.right { text-align: right; }
 .topnav .tab[aria-current="page"] { background: var(--brand); color: #fff; }
 .top-list { grid-auto-flow: column; grid-template-rows: repeat(5, auto); }
 @media (max-width: 760px) { .top-list { grid-auto-flow: row; grid-template-rows: none; } }
+
+/* ── 검색·탐색·소식 ── */
+.search input { width: 170px; padding: 8px 12px; border: 1px solid #b9d6c4; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 14px; }
+.search input:focus { outline: 2px solid var(--brand); border-color: var(--brand); }
+.topnav { gap: 10px; }
+.phase-tabs { margin-bottom: 14px; }
+.phase-tabs small { opacity: .8; }
+.cal-free { margin-top: 10px; }
+.closed-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.closed-list li { background: var(--surface-2); padding: 8px 12px; border-radius: 10px; font-size: 14px; }
+.closed-note { margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); font-weight: 700; font-size: 14px; }
+.closed-note small { display: block; font-weight: 400; color: var(--ink-3); margin-top: 2px; }
+.closed-note.on { background: var(--pricey-bg); color: var(--pricey); }
+.home-alerts:empty { display: none; }
+.alert-banner { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 12px 16px; margin: 0 0 14px; border-radius: 12px; background: var(--gold-bg); color: var(--gold); }
+.alert-banner a { font-weight: 700; text-decoration: none; }
+.alert-set { display: inline-flex; align-items: center; gap: 8px; margin-left: 10px; font-size: 14px; }
+.alert-set select { padding: 6px 10px; border-radius: 10px; border: 1px solid #b9d6c4; background: var(--surface); color: var(--ink); }
+.news-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.news-card { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--brand); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.news-card.ending { border-top-color: var(--gold); }
+.news-card.closed { border-top-color: var(--pricey); }
+.news-card h3 { margin: 0 0 4px; font-size: 16px; }
+.news-card p { margin: 0 0 6px; color: var(--ink-2); font-size: 14px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.pick { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; box-shadow: var(--shadow); }
+.pick:hover { border-color: var(--brand); }
+.pick-emoji { font-size: 30px; line-height: 1; }
+.compare-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.compare-list a { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; text-decoration: none; }
+.map-layout { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 24px; align-items: start; }
+.map-side { position: sticky; top: 76px; }
+.map-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.map-chips .chip { text-decoration: none; }
+.dict-search { width: 100%; max-width: 420px; padding: 10px 14px; border-radius: 12px; border: 1px solid #b9d6c4; background: var(--surface); color: var(--ink); }
+.dict-items { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.dict-items a { display: block; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-decoration: none; height: 100%; }
+.dict-items a:hover { border-color: var(--brand); }
+.dict-items p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+@media (max-width: 760px) {
+  .search input { width: 110px; }
+  .map-layout { grid-template-columns: 1fr; }
+  .map-side { position: static; }
+  .topnav { flex-wrap: wrap; }
+}
+.view > .section-title { margin-top: 22px; }

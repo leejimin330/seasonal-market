@@ -127,7 +127,12 @@ def list_items(request: Request):
     state = request.app.state
     today = today_kst(state.clock)
     summaries = state.prices.summaries()
-    return {"month": today.month, "items": [_item_json(i, summaries[i.id], today.month, today) for i in state.catalog]}
+    items = []
+    for i in state.catalog:
+        data = _item_json(i, summaries[i.id], today.month, today)
+        data["provinces"] = state.places.resolve(i.main_region)["provinces"]  # 산지 지도 탐색용
+        items.append(data)
+    return {"month": today.month, "items": items}
 
 
 @router.get("/items/{item_id}")

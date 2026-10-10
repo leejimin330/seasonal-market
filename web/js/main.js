@@ -6,6 +6,7 @@
 import { maybeShowAd } from './adpopup.js';
 import { api } from './api.js';
 import { cart } from './mylist.js';
+import { calendarView, dictView, mapView, searchView } from './pages.js';
 import {
   adminView, authView, cartView, fishDetailView, fishListView, homeView, itemView, mainView, meView,
   produceDetailView, produceListView, recentView, recipesView,
@@ -61,10 +62,18 @@ function drawNav() {
     ['#/cart', `🧺 장바구니${cart.list().length ? ` (${cart.list().length})` : ''}`],
     ['#/recipes', '🍳 레시피 찾기'],
   ];
+  const explore = [
+    ['#/calendar', '📅 제철 달력'],
+    ['#/map', '🗺 산지 지도'],
+    ['#/dict', '📖 식재료 사전'],
+  ];
   const account = session.user
     ? [['#/me', `🪙 내 크레딧 (${session.credits})`], ...(session.isAdmin ? [['#/admin', '⚙️ 관리자']] : [])]
     : [['#/login', '로그인'], ['#/signup', '가입하고 크레딧 받기']];
   nav.innerHTML = `
+    <form class="search" data-search role="search">
+      <input type="search" name="q" placeholder="식재료 검색" aria-label="식재료 검색" autocomplete="off">
+    </form>
     ${drawTabs()}
     ${session.user ? `<a class="credit-pill num" href="#/me" title="내 크레딧">🪙 ${session.credits}</a>` : ''}
     <div class="menu">
@@ -75,11 +84,18 @@ function drawNav() {
         ${session.user ? `<div class="menu-user">${session.user}님</div>` : ''}
         ${links.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}
         <hr>
+        ${explore.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}
+        <hr>
         ${account.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}
         ${session.user ? '<button type="button" data-logout>로그아웃</button>' : ''}
       </div>
     </div>`;
 
+  nav.querySelector('[data-search]').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = new FormData(e.currentTarget).get('q').toString().trim();
+    if (q) location.hash = `#/search?q=${encodeURIComponent(q)}`;
+  });
   const toggle = nav.querySelector('.menu-toggle');
   const panel = nav.querySelector('.menu-panel');
   const setOpen = (open) => {
@@ -138,6 +154,10 @@ async function route() {
     else if (parts[0] === 'me') await meView(view, session);
     else if (parts[0] === 'admin') await adminView(view, session);
     else if (parts[0] === 'season') await mainView(view);
+    else if (parts[0] === 'search') await searchView(view, params.get('q'));
+    else if (parts[0] === 'calendar') await calendarView(view, Number(params.get('m')) || 0);
+    else if (parts[0] === 'map') await mapView(view, params.get('p'));
+    else if (parts[0] === 'dict') await dictView(view, params.get('q'));
     else if (parts[0] === 'recent') await recentView(view);
     else if (parts[0] === 'cart') await cartView(view);
     else if (parts[0] === 'recipes') await recipesView(view);

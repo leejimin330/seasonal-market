@@ -4,7 +4,8 @@ import { api, ApiError } from './api.js';
 import { carousel } from './carousel.js';
 import { renderTrendChart } from './chart.js';
 import { renderKoreaMap } from './koreamap.js';
-import { cart, recent, trackOnce } from './mylist.js';
+import { alerts, cart, recent, trackOnce } from './mylist.js';
+import { closedNoteFor, drawHomeExtras2, loadAll, phaseOf } from './pages.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (v) => (v == null ? '—' : `${v.toLocaleString('ko-KR')}원`);
@@ -40,7 +41,7 @@ function remaining(until) {
 
 // ── 메인 ─────────────────────────────────────────────────────
 
-const mainState = { group: '전체', seasonOnly: true, sort: 'cheap' };
+const mainState = { group: '전체', seasonOnly: true, sort: 'cheap', phase: 'now' };
 
 // ── 홈 ───────────────────────────────────────────────────────
 // 세 화면(제철 소매 · 농산물 도매 · 수산물 산지)으로 가는 입구. 도매·수산 화면이 메뉴 속에 묻혀
@@ -104,10 +105,14 @@ export async function homeView(view) {
         <a class="home-cta" href="#/fish">산지 시세 보러 가기 →</a>
       </article>
     </section>
+    <section class="home-alerts" id="home-alerts"></section>
+    <section class="home-block" id="home-picks"></section>
+    <section class="home-block" id="home-news"></section>
     <section class="home-block" id="home-rank"></section>
     ${homeExtrasHtml(items.items, month)}`;
   wireHomeExtras(view, items.items, month);
   drawRank(view.querySelector('#home-rank'));
+  drawHomeExtras2(view);
 }
 
 
@@ -410,6 +415,9 @@ export async function mainView(view) {
       </div>
     </section>` : ''}
     <section>
+      <div class="seg phase-tabs" role="tablist" aria-label="제철 시기">
+        ${[['now', '지금 제철'], ['ending', '이번 달까지'], ['soon', '다음 달부터']].map(([v, l]) => `<button type="button" role="tab" data-phase="${v}" aria-selected="${mainState.phase === v}">${l} <small class="num" data-phase-count="${v}"></small></button>`).join('')}
+      </div>
       <div class="controls" role="toolbar" aria-label="품목 거르기">
         ${['전체', '채소', '과일', '수산', '축산', '곡물', '가공식품'].map((g) => `<button class="chip" data-group="${g}" aria-pressed="${mainState.group === g}">${g}</button>`).join('')}
         <button class="chip" data-season aria-pressed="${mainState.seasonOnly}">제철만</button>
@@ -426,8 +434,14 @@ export async function mainView(view) {
 
   const grid = view.querySelector('#item-grid');
   const draw = () => {
+    const phase = (i) => phaseOf({ months: i.season_months || [] }, month);
+    const inPhase = { now: (i) => i.in_season, ending: (i) => phase(i).ending, soon: (i) => phase(i).soon };
     let list = items.filter((i) => mainState.group === '전체' || CATEGORY_GROUP[i.category] === mainState.group);
-    if (mainState.seasonOnly) list = list.filter((i) => i.in_season);
+    view.querySelectorAll('[data-phase-count]').forEach((el) => {
+      el.textContent = items.filter((i) => inPhase[el.dataset.phaseCount](i)).length;
+    });
+    if (mainState.phase !== 'now') list = list.filter(inPhase[mainState.phase]);
+    else if (mainState.seasonOnly) list = list.filter((i) => i.in_season);
     list.sort(mainState.sort === 'name'
       ? (a, b) => a.name.localeCompare(b.name, 'ko')
       : (a, b) => (a.stale - b.stale) || (a.vs_normal ?? 999) - (b.vs_normal ?? 999));
@@ -446,6 +460,13 @@ export async function mainView(view) {
   };
   draw();
 
+  view.querySelectorAll('[data-phase]').forEach((b) => b.addEventListener('click', () => {
+    mainState.phase = b.dataset.phase;
+    view.querySelectorAll('[data-phase]').forEach((x) => x.setAttribute('aria-selected', x === b));
+    view.querySelector('[data-season]')?.toggleAttribute('hidden', mainState.phase !== 'now');
+    draw();
+  }));
+  view.querySelector('[data-season]')?.toggleAttribute('hidden', mainState.phase !== 'now');
   view.querySelectorAll('[data-group]').forEach((b) => b.addEventListener('click', () => {
     mainState.group = b.dataset.group;
     view.querySelectorAll('[data-group]').forEach((x) => x.setAttribute('aria-pressed', x === b));
@@ -532,7 +553,14 @@ export async function itemView(view, id, session) {
           <span>주산지 ${esc(item.main_region) || '—'}</span>
           ${item.season_note ? `<span>· ${esc(item.season_note)}</span>` : ''}
         </div>
-        <div class="detail-actions">${cartButton(`item:${item.id}`)}</div>
+        <div class="detail-actions">
+          ${cartButton(`item:${item.id}`)}
+          <label class="alert-set">🔔 평년보다
+            <select data-alert aria-label="가격 알림 기준">
+              ${[['', '알림 없음'], ['5', '5% 이상 싸지면'], ['10', '10% 이상 싸지면'], ['20', '20% 이상 싸지면']].map(([v, l]) => `<option value="${v}" ${String(alerts.get(`item:${item.id}`)?.pct || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </label>
+        </div>
       </div>
       <div class="now-box">
         <div class="label">${item.stale ? `마지막 조사 · ${item.date}` : `현재 소매가 ${item.date ? `· ${item.date} 기준` : ''}`}</div>
@@ -579,6 +607,25 @@ export async function itemView(view, id, session) {
   recent.add(entry);
   trackOnce(api, 'item', item.id);
   wireCartButton(view, entry, session);
+  view.querySelector('[data-alert]')?.addEventListener('change', (e) => {
+    const pct = Number(e.target.value) || 0;
+    alerts.set(entry.key, pct);
+    session?.toast?.(pct ? `평년보다 ${pct}% 이상 싸지면 홈에서 알려 드릴게요.` : '알림을 껐어요.');
+  });
+  // 같은 이름의 도매·위판 시세가 있으면 나란히 보여 준다
+  loadAll().then((all) => {
+    const match = all.records.filter((r) => r.kind !== 'item' && (r.name === item.name || r.name.startsWith(`${item.name}(`)));
+    const panel = view.querySelector('#trend-panel');
+    if (!match.length || !panel) return;
+    panel.insertAdjacentHTML('beforebegin', `
+      <section class="panel compare-panel">
+        <div class="panel-head"><h2>도매·위판 시세와 비교 <small>최근 7일 · kg당</small></h2></div>
+        <ul class="compare-list">
+          ${match.map((r) => `<li><a href="${esc(r.href)}"><span>${r.kind === 'produce' ? '🥬 농산물 도매 경락가' : '🐟 수산물 산지 위판가'}</span><b class="num">${won(r.price)} / kg</b></a></li>`).join('')}
+        </ul>
+        <p class="top-note">소매가는 ${esc(item.price_unit)} 기준이라 단위가 달라요. 같은 품목의 단계별 가격 흐름을 가늠하는 용도예요.</p>
+      </section>`);
+  }).catch(() => {});
 
   setupPaid(view.querySelector('#trend-panel'), {
     title: '가격 변동 추이', feature: 'trend', item, session, preview: 'chart',
@@ -1048,6 +1095,11 @@ async function auctionDetailView(view, kind, code, state, session) {
   recent.add(entry);
   trackOnce(api, kind, `${code}|${d.state}`);
   wireCartButton(view, entry, session);
+  if (kind === 'fish') {
+    closedNoteFor(d.name.split('(')[0]).then((html) => {
+      if (html) view.querySelector('.detail-actions')?.insertAdjacentHTML('afterend', html);
+    });
+  }
 
   renderKoreaMap(view.querySelector('#origin-map'), {
     points: d.cities.slice(0, 8).map((c) => ({ name: c.name.split(' ').slice(1).join(' '), lat: c.lat, lon: c.lon })),
