@@ -935,6 +935,7 @@ function drawAuctionHero(host, cfg, { latest, species, quiet, href }) {
   }
 }
 
+const fmtWonShort = (v) => (v >= 1e8 ? `${(v / 1e8).toFixed(1)}억원` : `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`);
 const VARIANT_SHOWN = 8; // 상세의 품종 탭은 이만큼만 먼저 보이고 나머지는 펼친다
 
 // 같은 이름의 품종·상태를 한 묶음으로. 가격은 거래량 가중 평균, 변동률도 거래량으로 가중한다.
@@ -1149,7 +1150,8 @@ async function auctionDetailView(view, kind, code, state, session) {
       if (v && v.kg != null) a.insertAdjacentHTML('beforeend', ` <small class="num">${won(v.kg)}</small>`);
     });
     // 거래량 많은 순으로 탭을 다시 놓고, 처음 보이는 8개와 접힌 것을 그 순서로 다시 나눈다
-    const w = (a) => byState.get(a.dataset.state)?.weight ?? -1;
+    const isGeneric = (st) => ['기타', '-', d.name].includes(st);
+    const w = (a) => (isGeneric(a.dataset.state) ? -1 : (byState.get(a.dataset.state)?.weight ?? -1));
     const more = tabs.querySelector('[data-variant-more]');
     chips.sort((a, b) => w(b) - w(a)).forEach((a, n) => {
       a.classList.toggle('extra', n >= VARIANT_SHOWN && a.getAttribute('aria-pressed') !== 'true');
@@ -1157,23 +1159,54 @@ async function auctionDetailView(view, kind, code, state, session) {
     });
     const panel = view.querySelector('#auction-trend');
     if (!panel) return;
-    const max = Math.max(...vs.map((v) => v.weight), 1);
-    panel.insertAdjacentHTML('beforebegin', `
-      <section class="panel variant-panel">
-        <div class="panel-head"><h2>품종별 비교 <small>최근 7일 · 거래량 많은 순</small></h2></div>
-        <ul class="variant-table">
-          ${vs.map((v) => `
-            <li class="${v.state === d.state ? 'current' : ''}">
-              <a href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(v.state)}">
-                <span class="v-name">${esc(v.state)}</span>
-                <span class="v-bar" aria-hidden="true"><i style="width:${Math.max(3, Math.round((v.weight / max) * 100))}%"></i></span>
-                <span class="v-kg num">${v.weight.toLocaleString('ko-KR')}kg</span>
-                <b class="v-price num">${won(v.kg)}<small>/kg</small></b>
-                <span class="v-change">${changeBadge(v.change)}</span>
-              </a>
-            </li>`).join('')}
-        </ul>
-      </section>`);
+    // 많이 팔리는 순으로 메이저 품종을 앞에 둔다. "기타"나 품목 이름 그대로인 칸은 품종이 아니라 그 외로 보낸다.
+    const generic = new Set(['기타', '-', d.name]);
+    const metric = { key: 'weight' };
+    const MAJOR = 5;
+    const box = document.createElement('section');
+    box.className = 'panel variant-panel';
+    panel.parentNode.insertBefore(box, panel);
+    const draw = () => {
+      const val = (v) => (metric.key === 'weight' ? v.weight : v.weight * (v.kg || 0));
+      const named = vs.filter((v) => !generic.has(v.state)).sort((a, b) => val(b) - val(a));
+      const rest = vs.filter((v) => generic.has(v.state));
+      const total = vs.reduce((acc, v) => acc + val(v), 0) || 1;
+      const major = named.slice(0, MAJOR);
+      const others = [...named.slice(MAJOR), ...rest];
+      const max = Math.max(...vs.map(val), 1);
+      const row = (v, rank) => `
+        <li class="${v.state === d.state ? 'current' : ''}">
+          <a href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(v.state)}">
+            <span class="v-name">${rank ? `<i class="v-rank">${rank}</i>` : ''}${esc(v.state)}</span>
+            <span class="v-bar" aria-hidden="true"><i style="width:${Math.max(3, Math.round((val(v) / max) * 100))}%"></i></span>
+            <span class="v-kg num">${metric.key === 'weight' ? `${v.weight.toLocaleString('ko-KR')}kg` : fmtWonShort(val(v))} · ${Math.round((val(v) / total) * 100)}%</span>
+            <b class="v-price num">${won(v.kg)}<small>/kg</small></b>
+            <span class="v-change">${changeBadge(v.change)}</span>
+          </a>
+        </li>`;
+      const majorShare = Math.round((major.reduce((acc, v) => acc + val(v), 0) / total) * 100);
+      box.innerHTML = `
+        <div class="panel-head">
+          <h2>많이 팔리는 품종 <small>최근 7일 · 메이저 ${major.length}가지가 전체의 ${majorShare}%</small></h2>
+          <div class="seg" role="tablist" aria-label="순위 기준">
+            <button type="button" role="tab" data-metric="weight" aria-selected="${metric.key === 'weight'}">거래량</button>
+            <button type="button" role="tab" data-metric="amount" aria-selected="${metric.key === 'amount'}">거래금액</button>
+          </div>
+        </div>
+        <ul class="variant-table">${major.map((v, n) => row(v, n + 1)).join('')}</ul>
+        ${others.length ? `
+          <button type="button" class="btn ghost small" data-others aria-expanded="false">그 외 ${others.length}가지 보기</button>
+          <ul class="variant-table others" hidden>${others.map((v) => row(v, 0)).join('')}</ul>` : ''}`;
+      box.querySelectorAll('[data-metric]').forEach((b) => b.addEventListener('click', () => { metric.key = b.dataset.metric; draw(); }));
+      const btn = box.querySelector('[data-others]');
+      btn?.addEventListener('click', () => {
+        const list = box.querySelector('.others');
+        list.hidden = !list.hidden;
+        btn.setAttribute('aria-expanded', String(!list.hidden));
+        btn.textContent = list.hidden ? `그 외 ${others.length}가지 보기` : '접기';
+      });
+    };
+    draw();
   }).catch(() => {});
 
   view.querySelector('[data-variant-more]')?.addEventListener('click', (e) => {

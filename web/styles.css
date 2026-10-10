@@ -700,3 +700,11 @@ td.right, th.right { text-align: right; }
   .variant-table .v-bar { grid-column: 1 / -1; grid-row: 2; }
   .variant-table .v-kg { display: none; }
 }
+
+.variant-panel .panel-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.variant-panel .btn { margin-top: 10px; }
+.variant-table.others { margin-top: 10px; }
+.v-rank { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-right: 8px; border-radius: 7px; background: var(--brand); color: #fff; font-style: normal; font-size: 12px; font-weight: 800; }
+.variant-table a { grid-template-columns: minmax(110px, 190px) 1fr 150px 110px 120px; }
+
+.variant-table[hidden] { display: none; }
