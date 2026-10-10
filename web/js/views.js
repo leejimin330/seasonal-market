@@ -4,6 +4,7 @@ import { api, ApiError } from './api.js';
 import { carousel } from './carousel.js';
 import { renderTrendChart } from './chart.js';
 import { renderKoreaMap } from './koreamap.js';
+import { cart, recent, trackOnce } from './mylist.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (v) => (v == null ? '—' : `${v.toLocaleString('ko-KR')}원`);
@@ -74,9 +75,9 @@ export async function homeView(view) {
       <h1>장 보기 전에,<br>지금 싸고 맛있는 제철부터.</h1>
       <p>마트 소매가부터 도매시장 경매가, 수협 위판장 산지가까지 공공데이터로 매일 모아 보여드려요.</p>
       <div class="home-stats">
-        <span><b class="num">${inSeason.length}</b>가지 제철</span>
-        <span><b class="num">${uniq(produce.species)}</b>개 도매 품목</span>
-        <span><b class="num">${uniq(fish.species)}</b>종 수산물</span>
+        <span><b class="num">${inSeason.length}</b>지금 제철</span>
+        <span><b class="num">${uniq(produce.species)}</b>도매 품목</span>
+        <span><b class="num">${uniq(fish.species)}</b>수산물</span>
       </div>
     </section>
 
@@ -103,8 +104,173 @@ export async function homeView(view) {
         <a class="home-cta" href="#/fish">산지 시세 보러 가기 →</a>
       </article>
     </section>
+    <section class="home-block" id="home-rank"></section>
     ${homeExtrasHtml(items.items, month)}`;
   wireHomeExtras(view, items.items, month);
+  drawRank(view.querySelector('#home-rank'));
+}
+
+
+// ── 인기 랭킹 ────────────────────────────────────────────────
+// 판매액·물량은 최근 7일 도매 경매와 위판 자료, 열람수는 이 사이트의 상세 화면 조회다.
+// 실제 수확 통계가 아니라서 "수확"은 거래 물량으로 대신 보여 준다고 화면에 밝힌다.
+
+const rankState = { by: 'sales', kind: 'all' };
+const RANK_BY = [['sales', '판매액'], ['volume', '수확·물량'], ['views', '열람수']];
+const RANK_KIND = [['all', '전체'], ['produce', '농산물'], ['fish', '수산물'], ['item', '소매 품목']];
+const RANK_NOTE = {
+  sales: '도매시장 경매와 수협 위판장의 최근 7일 거래 금액 합계예요.',
+  volume: '실제 수확 통계가 아니라, 최근 7일 도매시장 반입·위판장 거래 물량(kg)으로 대신 보여 드려요.',
+  views: '이 사이트에서 최근 7일 동안 상세 화면을 연 횟수예요. 이용자가 늘수록 정확해져요.',
+};
+
+function fmtRank(value, unit) {
+  if (unit === '원') {
+    if (value >= 1e8) return `${(value / 1e8).toFixed(1)}억원`;
+    return `${Math.round(value / 1e4).toLocaleString('ko-KR')}만원`;
+  }
+  if (unit === 'kg') return value >= 1000 ? `${(value / 1000).toFixed(1)}t` : `${value.toLocaleString('ko-KR')}kg`;
+  return `${value.toLocaleString('ko-KR')}회`;
+}
+
+async function drawRank(box) {
+  if (!box) return;
+  const usable = (k) => rankState.by === 'views' || k !== 'item';
+  if (!usable(rankState.kind)) rankState.kind = 'all';
+  box.innerHTML = `
+    <h2 class="section-title">인기 식재료 랭킹 <small>최근 7일</small></h2>
+    <div class="top-controls">
+      <div class="seg" role="tablist" aria-label="랭킹 기준">
+        ${RANK_BY.map(([v, l]) => `<button type="button" role="tab" data-by="${v}" aria-selected="${rankState.by === v}">${l}</button>`).join('')}
+      </div>
+      <div class="top-kinds">
+        ${RANK_KIND.filter(([v]) => usable(v)).map(([v, l]) => `<button type="button" class="chip" data-kind="${v}" aria-pressed="${rankState.kind === v}">${l}</button>`).join('')}
+      </div>
+    </div>
+    <ol class="top-list" id="top-list"><li class="empty">불러오는 중…</li></ol>
+    <p class="top-note">${RANK_NOTE[rankState.by]}</p>`;
+  box.querySelectorAll('[data-by]').forEach((b) => b.addEventListener('click', () => {
+    rankState.by = b.dataset.by;
+    drawRank(box);
+  }));
+  box.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => {
+    rankState.kind = b.dataset.kind;
+    drawRank(box);
+  }));
+  const list = box.querySelector('#top-list');
+  try {
+    const data = await api.rank(rankState.by, rankState.kind);
+    if (!data.items.length) {
+      list.innerHTML = `<li class="empty">${rankState.by === 'views' ? '아직 집계된 열람이 없어요. 품목 상세를 열어 보면 쌓여요.' : '집계할 거래 자료가 없어요.'}</li>`;
+      return;
+    }
+    const max = data.items[0].value || 1;
+    list.innerHTML = data.items.map((e, n) => `
+      <li><a href="${esc(e.href)}">
+        <span class="top-no num">${n + 1}</span>
+        <span class="top-name">${esc(e.emoji || '')} ${esc(e.name)}</span>
+        <span class="top-bar" aria-hidden="true"><i style="width:${Math.max(4, Math.round((e.value / max) * 100))}%"></i></span>
+        <b class="num">${fmtRank(e.value, data.unit)}</b>
+      </a></li>`).join('');
+  } catch (err) {
+    list.innerHTML = `<li class="empty">${esc(err.message)}</li>`;
+  }
+}
+
+// ── 내 목록: 이전에 본 식재, 장바구니, 레시피 ──────────────────
+
+function cartButton(key) {
+  const on = cart.has(key);
+  return `<button type="button" class="btn small cart-btn${on ? ' on' : ''}" data-cart>${on ? '✓ 장바구니에 담김' : '🧺 장바구니 담기'}</button>`;
+}
+
+function wireCartButton(view, entry, session) {
+  const btn = view.querySelector('[data-cart]');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const added = cart.toggle(entry);
+    btn.classList.toggle('on', added);
+    btn.textContent = added ? '✓ 장바구니에 담김' : '🧺 장바구니 담기';
+    session?.toast?.(added ? '장바구니에 담았어요.' : '장바구니에서 뺐어요.');
+  });
+}
+
+export async function recentView(view) {
+  const list = recent.list();
+  view.innerHTML = `
+    <h1 class="page-title">🕘 이전에 본 식재</h1>
+    ${list.length ? `
+      <div class="grid">
+        ${list.map((e) => `<a class="card" href="${esc(e.href)}"><div class="card-top"><h3><span class="emoji" aria-hidden="true">${esc(e.emoji || '')}</span>${esc(e.name)}</h3></div></a>`).join('')}
+      </div>
+      <p><button type="button" class="btn ghost small" data-clear>목록 비우기</button></p>`
+    : '<p class="empty">아직 본 식재가 없어요. 품목 상세 화면을 열면 여기에 쌓여요.</p>'}`;
+  view.querySelector('[data-clear]')?.addEventListener('click', () => { recent.clear(); recentView(view); });
+}
+
+export async function cartView(view) {
+  const list = cart.list();
+  if (!list.length) {
+    view.innerHTML = '<h1 class="page-title">🧺 장바구니</h1><p class="empty">담은 식재가 없어요. 품목 상세 화면에서 "장바구니 담기"를 눌러 보세요.</p>';
+    return;
+  }
+  view.innerHTML = '<h1 class="page-title">🧺 장바구니</h1><p class="empty">불러오는 중…</p>';
+  const [items, produce, fish] = await Promise.all([
+    api.items().catch(() => ({ items: [] })),
+    api.produce().catch(() => ({ species: [] })),
+    api.fish().catch(() => ({ species: [] })),
+  ]);
+  const retail = Object.fromEntries(items.items.map((i) => [i.id, i]));
+  const auction = (data) => Object.fromEntries(data.species.map((s) => [`${s.code}|${s.state}`, s]));
+  const lookup = { item: retail, produce: auction(produce), fish: auction(fish) };
+
+  const rows = list.map((e) => {
+    const [kind, ...rest] = e.key.split(':');
+    const live = lookup[kind]?.[rest.join(':')];
+    let price = '—';
+    let sum = null;
+    if (kind === 'item' && live && live.price != null && !live.stale) {
+      price = `${won(live.price)} / ${esc(live.price_unit)}`;
+      sum = live.price * (e.qty || 1);
+    } else if (live && live.kg != null) {
+      price = `${won(live.kg)} / kg`;
+    }
+    return { e, price, sum, kind };
+  });
+  const total = rows.reduce((a, r) => a + (r.sum || 0), 0);
+  view.innerHTML = `
+    <h1 class="page-title">🧺 장바구니</h1>
+    <ul class="cart-list">
+      ${rows.map(({ e, price, sum, kind }) => `
+        <li>
+          <a class="cart-name" href="${esc(e.href)}">${esc(e.emoji || '')} ${esc(e.name)}</a>
+          <span class="cart-price num">${price}</span>
+          ${kind === 'item' ? `
+            <span class="qty">
+              <button type="button" class="btn ghost small" data-dec="${esc(e.key)}" aria-label="하나 줄이기">−</button>
+              <b class="num">${e.qty || 1}</b>
+              <button type="button" class="btn ghost small" data-inc="${esc(e.key)}" aria-label="하나 늘리기">+</button>
+            </span>
+            <b class="num cart-sum">${sum != null ? won(sum) : '—'}</b>` : '<span></span><span></span>'}
+          <button type="button" class="btn ghost small" data-del="${esc(e.key)}">빼기</button>
+        </li>`).join('')}
+    </ul>
+    <p class="cart-total">소매 품목 예상 합계 <b class="num">${won(total)}</b>
+      <small>· 도매·위판 품목은 kg 시세만 보여 드려요. 실제 판매가와 다를 수 있어요.</small></p>`;
+  const redraw = () => cartView(view);
+  view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { cart.remove(b.dataset.del); redraw(); }));
+  const qty = (key) => (cart.list().find((x) => x.key === key)?.qty || 1);
+  view.querySelectorAll('[data-inc]').forEach((b) => b.addEventListener('click', () => { cart.setQty(b.dataset.inc, qty(b.dataset.inc) + 1); redraw(); }));
+  view.querySelectorAll('[data-dec]').forEach((b) => b.addEventListener('click', () => { cart.setQty(b.dataset.dec, qty(b.dataset.dec) - 1); redraw(); }));
+}
+
+export async function recipesView(view) {
+  view.innerHTML = `
+    <h1 class="page-title">🍳 레시피 찾기</h1>
+    <section class="panel">
+      <p>지금 제철인 재료로 만들 수 있는 레시피를 찾아 주는 기능이에요.</p>
+      <p class="empty">레시피 사이트와 연결하는 중이라 아직 열리지 않았어요.</p>
+    </section>`;
 }
 
 // ── 홈 하단 컨텐츠 ───────────────────────────────────────────
@@ -366,6 +532,7 @@ export async function itemView(view, id, session) {
           <span>주산지 ${esc(item.main_region) || '—'}</span>
           ${item.season_note ? `<span>· ${esc(item.season_note)}</span>` : ''}
         </div>
+        <div class="detail-actions">${cartButton(`item:${item.id}`)}</div>
       </div>
       <div class="now-box">
         <div class="label">${item.stale ? `마지막 조사 · ${item.date}` : `현재 소매가 ${item.date ? `· ${item.date} 기준` : ''}`}</div>
@@ -407,6 +574,11 @@ export async function itemView(view, id, session) {
   renderKoreaMap(view.querySelector('#origin-map'), item.places)
     .catch(() => { view.querySelector('#origin-map').innerHTML = '<p class="empty">지도를 불러오지 못했어요.</p>'; })
     .finally(() => view.querySelector('#origin-map')?.removeAttribute('aria-busy'));
+
+  const entry = { key: `item:${item.id}`, kind: 'item', name: item.name, emoji: item.emoji, href: `#/item/${item.id}` };
+  recent.add(entry);
+  trackOnce(api, 'item', item.id);
+  wireCartButton(view, entry, session);
 
   setupPaid(view.querySelector('#trend-panel'), {
     title: '가격 변동 추이', feature: 'trend', item, session, preview: 'chart',
@@ -818,6 +990,7 @@ async function auctionDetailView(view, kind, code, state, session) {
         <div class="detail-meta">
           ${d.states.map((s) => `<a class="chip" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}">${esc(s)}</a>`).join(' ')}
         </div>
+        <div class="detail-actions">${cartButton(`${kind}:${code}|${d.state}`)}</div>
       </div>
       <div class="now-box">
         <div class="label">${d.is_quiet ? '요즘 거래가 뜸해요 · 마지막 거래 주 평균' : `${cfg.priceLabel} · 최근 7일 평균`} (${esc(d.latest)}까지)</div>
@@ -867,6 +1040,14 @@ async function auctionDetailView(view, kind, code, state, session) {
     </section>` : ''}
     ${d.nutrition ? nutritionPanel({ nutrition: d.nutrition, nutrition_source: '식품의약품안전처 식품영양성분DB (100g 기준)' }) : ''}
     <p class="fineprint">출처: ${cfg.source}</p>`;
+
+  const entry = {
+    key: `${kind}:${code}|${d.state}`, kind, name: d.name, emoji: d.emoji || '',
+    href: `#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(d.state)}`,
+  };
+  recent.add(entry);
+  trackOnce(api, kind, `${code}|${d.state}`);
+  wireCartButton(view, entry, session);
 
   renderKoreaMap(view.querySelector('#origin-map'), {
     points: d.cities.slice(0, 8).map((c) => ({ name: c.name.split(' ').slice(1).join(' '), lat: c.lat, lon: c.lon })),

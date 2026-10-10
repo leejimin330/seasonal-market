@@ -121,6 +121,15 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- 사이트 열람 수. kind: item(소매 품목 id) | fish | produce (key는 "코드|상태").
+CREATE TABLE IF NOT EXISTS page_views (
+    kind  TEXT NOT NULL,
+    key   TEXT NOT NULL,
+    day   TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (kind, key, day)
+);
 """
 
 
@@ -166,6 +175,21 @@ class Database:
     def _query(self, sql: str, params=()) -> list[sqlite3.Row]:
         with self._lock:
             return self._conn.execute(sql, params).fetchall()
+
+    # ── 열람 수 ─────────────────────────────────────────────
+
+    def add_view(self, kind: str, key: str, day: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO page_views(kind, key, day, count) VALUES (?, ?, ?, 1) "
+                "ON CONFLICT(kind, key, day) DO UPDATE SET count = count + 1",
+                (kind, key, day),
+            )
+
+    def views_since(self, day: str) -> list[tuple[str, str, int]]:
+        rows = self._query(
+            "SELECT kind, key, SUM(count) AS n FROM page_views WHERE day >= ? GROUP BY kind, key", (day,))
+        return [(r["kind"], r["key"], r["n"]) for r in rows]
 
     # ── 사용자 ──────────────────────────────────────────────
 

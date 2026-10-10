@@ -4,8 +4,8 @@
   --surface-2: #eaf5ee;
   --line: #d6e8dc;
   --ink: #12261a;
-  --ink-2: #44594c;
-  --ink-3: #6f8577;
+  --ink-2: #34483c;
+  --ink-3: #55695e;
   --brand: #12803f;
   --brand-ink: #ffffff;
   --brand-soft: #dff3e6;
@@ -533,3 +533,69 @@ td.right, th.right { text-align: right; }
 .home-hero > p { grid-row: 4; }
 .home-hero > .home-stats { grid-row: 1 / span 5; }
 @media (max-width: 760px) { .home-hero { grid-template-rows: none; } .home-hero > .eyebrow, .home-hero > h1, .home-hero > p { grid-row: auto; } }
+
+/* ── 가독성: 눌린 칩·주요 버튼은 초록 바탕 + 흰 글씨 ── */
+.chip { color: var(--ink); border-color: #b9d6c4; }
+.chip[aria-pressed="true"] { background: var(--brand); color: #fff; border-color: var(--brand); font-weight: 700; }
+.home-cta {
+  display: inline-flex; align-items: center; justify-content: center; align-self: flex-start;
+  background: var(--brand); color: #fff; padding: 9px 16px; border-radius: 10px; text-decoration: none;
+}
+.home-cta:hover { text-decoration: none; filter: brightness(1.08); }
+.home-banner.produce .home-cta { background: var(--produce-accent); }
+.home-banner.fish .home-cta { background: var(--fish-accent); }
+.badge { background: var(--brand); color: #fff; }
+.btn.ghost { background: var(--surface-2); color: var(--ink); border: 1px solid #b9d6c4; }
+.home-months .chip[aria-pressed="true"] { background: var(--brand); color: #fff; }
+
+/* ── 상단 탭 ── */
+.tabs { display: flex; gap: 4px; margin-right: 6px; }
+.tab { text-decoration: none; font-weight: 700; font-size: 15px; color: var(--ink); padding: 7px 14px; border-radius: 999px; }
+.tab:hover { background: var(--brand-soft); }
+.tab[aria-current="page"] { background: var(--brand); color: #fff; }
+.topnav { flex-wrap: nowrap; }
+
+/* ── 랭킹 ── */
+.top-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.seg { display: inline-flex; border: 1px solid #b9d6c4; border-radius: 999px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 8px 18px; font-weight: 700; color: var(--ink); }
+.seg button[aria-selected="true"] { background: var(--brand); color: #fff; }
+.top-kinds { display: flex; gap: 6px; flex-wrap: wrap; }
+.top-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.top-list li.empty { grid-column: 1 / -1; }
+.top-list a { display: grid; grid-template-columns: 28px minmax(90px, 160px) 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-decoration: none; }
+.top-list a:hover { border-color: var(--brand); }
+.top-no { font-weight: 800; color: var(--brand); text-align: center; }
+.top-list li:nth-child(-n+3) .top-no { background: var(--brand); color: #fff; border-radius: 8px; padding: 1px 0; }
+.top-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-bar { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.top-bar i { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+.top-list b { font-size: 14px; white-space: nowrap; }
+.top-note { color: var(--ink-3); font-size: 13px; margin: 10px 2px 0; }
+
+/* ── 장바구니·이전에 본 식재 ── */
+.detail-actions { margin-top: 12px; }
+.cart-btn { background: var(--brand); color: #fff; }
+.cart-btn.on { background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand); }
+.cart-list { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cart-list li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, auto) auto minmax(80px, auto) auto; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.cart-name { font-weight: 700; text-decoration: none; }
+.qty { display: inline-flex; align-items: center; gap: 8px; }
+.cart-sum { text-align: right; }
+.cart-total { font-size: 17px; }
+.cart-total small { color: var(--ink-3); font-size: 13px; }
+
+@media (max-width: 760px) {
+  .tabs { margin-right: 0; }
+  .tab { padding: 6px 10px; font-size: 14px; }
+  .top-list { grid-template-columns: 1fr; }
+  .cart-list li { grid-template-columns: 1fr auto; }
+  .brand { font-size: 16px; }
+}
+
+/* 탭: .topnav a 규칙보다 앞서게 한다 / 랭킹은 왼쪽 열에 1~5위, 오른쪽 열에 6~10위 */
+.topnav .tab { font-size: 15px; font-weight: 700; color: var(--ink); padding: 7px 16px; border-radius: 999px; }
+.topnav .tab:hover { background: var(--brand-soft); color: var(--ink); }
+.topnav .tab[aria-current="page"] { background: var(--brand); color: #fff; }
+.top-list { grid-auto-flow: column; grid-template-rows: repeat(5, auto); }
+@media (max-width: 760px) { .top-list { grid-auto-flow: row; grid-template-rows: none; } }

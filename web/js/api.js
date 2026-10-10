@@ -37,6 +37,8 @@ export const api = {
   trend: (id) => request('POST', `/items/${encodeURIComponent(id)}/trend`),
   where: (id) => request('POST', `/items/${encodeURIComponent(id)}/where`),
   fish: () => request('GET', '/fish'),
+  rank: (by, kind) => request('GET', `/rank?by=${encodeURIComponent(by)}&kind=${encodeURIComponent(kind)}`),
+  view: (kind, key) => request('POST', '/view', { kind, key }).catch(() => null),
   fishDetail: (code, state) => request('GET', `/fish/${encodeURIComponent(code)}${state ? `?state=${encodeURIComponent(state)}` : ''}`),
   produce: () => request('GET', '/produce'),
   produceDetail: (code, state) => request('GET', `/produce/${encodeURIComponent(code)}${state ? `?state=${encodeURIComponent(state)}` : ''}`),

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import time
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -201,6 +201,79 @@ def produce_items(request: Request):
 def produce_detail(request: Request, code: str, state: str | None = None,
                    user_id: str | None = Depends(optional_user)):
     return _auction_detail(request, "produce", code, state, user_id)
+
+
+# ── 열람·랭킹 ───────────────────────────────────────────────
+
+RANK_WINDOW_DAYS = 7
+VIEW_KINDS = {"item", "fish", "produce"}
+
+
+class ViewBeacon(BaseModel):
+    kind: str
+    key: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/view")
+def record_view(request: Request, body: ViewBeacon):
+    """상세 화면을 열었을 때 화면이 한 번 알려 준다. 목록·홈 미리보기는 세지 않는다."""
+    if body.kind not in VIEW_KINDS:
+        raise HTTPException(400, "알 수 없는 종류입니다.")
+    state = request.app.state
+    state.db.add_view(body.kind, body.key, today_kst(state.clock).isoformat())
+    return {"ok": True}
+
+
+@router.get("/rank")
+def rank(request: Request, by: str = "sales", kind: str = "all", limit: int = 10):
+    """인기 랭킹. by: sales(거래 금액) | volume(거래 물량) | views(사이트 열람).
+
+    판매·물량은 도매 경매와 위판장 자료라 소매 품목에는 없다. "수확량"에 가장 가까운 지표로
+    최근 7일 거래 물량을 쓴다 — 실제 수확 통계가 아니다.
+    """
+    if by not in {"sales", "volume", "views"}:
+        raise HTTPException(400, "by는 sales, volume, views 중 하나입니다.")
+    if kind not in {"all", "produce", "fish", "item"}:
+        raise HTTPException(400, "kind는 all, produce, fish, item 중 하나입니다.")
+    limit = max(1, min(limit, 30))
+    state = request.app.state
+    today = today_kst(state.clock)
+    entries: dict[tuple[str, str], dict] = {}
+
+    def add(k: str, name: str, emoji: str, href: str, value: float):
+        slot = entries.setdefault((k, name), {"kind": k, "name": name, "emoji": emoji, "href": href, "value": 0})
+        slot["value"] += value
+
+    kinds = ["produce", "fish", "item"] if kind == "all" else [kind]
+    if by in {"sales", "volume"}:
+        for k in kinds:
+            if k == "item":
+                continue  # 소매 조사에는 거래량이 없다
+            queries = state.produce_queries if k == "produce" else state.fish_queries
+            for s in queries.species()["species"]:
+                value = s["weight"] * (s["kg"] or 0) if by == "sales" else s["weight"]
+                add(k, s["name"], s.get("emoji", ""), f"#/{k}/{s['code']}?state={s['state']}", value)
+    else:
+        since = (today - timedelta(days=RANK_WINDOW_DAYS - 1)).isoformat()
+        names = {i.id: i for i in state.catalog}
+        lookup = {k: {f"{s['code']}|{s['state']}": s
+                      for s in (state.produce_queries if k == "produce" else state.fish_queries).species()["species"]}
+                  for k in ("produce", "fish")}
+        for k, key, n in state.db.views_since(since):
+            if k not in kinds:
+                continue
+            if k == "item" and key in names:
+                it = names[key]
+                add(k, it.name, it.emoji, f"#/item/{it.id}", n)
+            elif k in lookup and key in lookup[k]:
+                s = lookup[k][key]
+                add(k, s["name"], s.get("emoji", ""), f"#/{k}/{s['code']}?state={s['state']}", n)
+
+    ranked = sorted(entries.values(), key=lambda e: -e["value"])[:limit]
+    for e in ranked:
+        e["value"] = round(e["value"])
+    return {"by": by, "kind": kind, "window_days": RANK_WINDOW_DAYS,
+            "unit": {"sales": "원", "volume": "kg", "views": "회"}[by], "items": ranked}
 
 
 # ── 유료 ────────────────────────────────────────────────────

@@ -5,9 +5,10 @@
 
 import { maybeShowAd } from './adpopup.js';
 import { api } from './api.js';
+import { cart } from './mylist.js';
 import {
-  adminView, authView, fishDetailView, fishListView, homeView, itemView, mainView, meView, produceDetailView,
-  produceListView,
+  adminView, authView, cartView, fishDetailView, fishListView, homeView, itemView, mainView, meView,
+  produceDetailView, produceListView, recentView, recipesView,
 } from './views.js';
 
 const view = document.getElementById('view');
@@ -44,18 +45,27 @@ const session = {
   },
 };
 
-// 오른쪽 위 메뉴는 ☰ 하나로 모은다. 크레딧 잔액만 밖에 남긴다 — 유료 기능을 쓸 때 바로 보여야 한다.
+// 위쪽에는 세 화면 탭을, 오른쪽 ☰ 메뉴에는 내 목록(본 식재·장바구니·레시피)과 계정을 둔다.
+// 크레딧 잔액만 밖에 남긴다 — 유료 기능을 쓸 때 바로 보여야 한다.
+const TABS = [['#/season', '제철', 'season'], ['#/produce', '농산물', 'produce'], ['#/fish', '수산물', 'fish']];
+
+function drawTabs() {
+  const current = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0];
+  return `<div class="tabs" role="navigation" aria-label="화면">${TABS.map(([href, label, key]) =>
+    `<a href="${href}" class="tab" ${current === key || (key === 'season' && current === 'item') ? 'aria-current="page"' : ''}>${label}</a>`).join('')}</div>`;
+}
+
 function drawNav() {
   const links = [
-    ['#/', '🏠 홈'],
-    ['#/season', '🧺 제철 장바구니'],
-    ['#/produce', '🥬 농산물 도매 시세'],
-    ['#/fish', '🐟 수산물 산지 시세'],
+    ['#/recent', '🕘 이전에 본 식재'],
+    ['#/cart', `🧺 장바구니${cart.list().length ? ` (${cart.list().length})` : ''}`],
+    ['#/recipes', '🍳 레시피 찾기'],
   ];
   const account = session.user
     ? [['#/me', `🪙 내 크레딧 (${session.credits})`], ...(session.isAdmin ? [['#/admin', '⚙️ 관리자']] : [])]
     : [['#/login', '로그인'], ['#/signup', '가입하고 크레딧 받기']];
   nav.innerHTML = `
+    ${drawTabs()}
     ${session.user ? `<a class="credit-pill num" href="#/me" title="내 크레딧">🪙 ${session.credits}</a>` : ''}
     <div class="menu">
       <button type="button" class="menu-toggle" aria-expanded="false" aria-controls="menu-panel" aria-label="메뉴 열기">
@@ -128,6 +138,9 @@ async function route() {
     else if (parts[0] === 'me') await meView(view, session);
     else if (parts[0] === 'admin') await adminView(view, session);
     else if (parts[0] === 'season') await mainView(view);
+    else if (parts[0] === 'recent') await recentView(view);
+    else if (parts[0] === 'cart') await cartView(view);
+    else if (parts[0] === 'recipes') await recipesView(view);
     else await homeView(view);
   } catch (err) {
     view.innerHTML = `<p class="empty">${err.message}</p>`;
@@ -135,7 +148,9 @@ async function route() {
 }
 
 // 첫 화면은 세지 않고, 사용자가 화면을 넘어갈 때만 광고 빈도를 센다.
+window.addEventListener('mylist-change', drawNav);
 window.addEventListener('hashchange', () => {
+  drawNav();
   route();
   maybeShowAd(location.hash.replace(/^#\/?/, '').split(/[/?]/)[0]);
 });
