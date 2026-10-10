@@ -1,14 +1,14 @@
 :root {
-  --bg: #f7f6f1;
+  --bg: #f4faf6;
   --surface: #ffffff;
-  --surface-2: #f1efe7;
-  --line: #e4e1d6;
-  --ink: #1d2320;
-  --ink-2: #4d5652;
-  --ink-3: #7c8581;
-  --brand: #17803f;
+  --surface-2: #eaf5ee;
+  --line: #d6e8dc;
+  --ink: #12261a;
+  --ink-2: #44594c;
+  --ink-3: #6f8577;
+  --brand: #12803f;
   --brand-ink: #ffffff;
-  --brand-soft: #e3f2e8;
+  --brand-soft: #dff3e6;
   --cheap: #146c36;
   --cheap-bg: #e2f3e7;
   --pricey: #b4312a;
@@ -18,16 +18,16 @@
   --sample: #7a4b00;
   --sample-bg: #ffe9b8;
   /* 차트 두 계열 — dataviz 검증 스크립트 통과 (light) */
-  --series-price: #17803f;
+  --series-price: #12803f;
   --series-normal: #7b61d9;
-  --grid: #e8e5dc;
-  --hero-a: #e6f4ea;
-  --hero-b: #fff4dc;
-  --produce-accent: #5b7f12;
-  --produce-soft: #eef5dc;
-  --fish-accent: #1f6fb2;
-  --fish-soft: #e2eff9;
-  --shadow: 0 1px 2px rgba(20, 30, 25, .06), 0 4px 16px rgba(20, 30, 25, .05);
+  --grid: #e0eee5;
+  --hero-a: #d8f1e1;
+  --hero-b: #ffffff;
+  --produce-accent: #3f8a1f;
+  --produce-soft: #e8f6dc;
+  --fish-accent: #12877a;
+  --fish-soft: #dcf3ef;
+  --shadow: 0 1px 2px rgba(15, 60, 30, .06), 0 4px 16px rgba(15, 60, 30, .06);
   --radius: 14px;
   color-scheme: light;
 }
@@ -140,7 +140,7 @@ input { font: inherit; }
   padding: 5px 12px !important; border-radius: 999px !important;
 }
 
-.view { max-width: 1080px; margin: 0 auto; padding: 24px 20px 48px; min-height: 60vh; }
+.view { max-width: 1360px; margin: 0 auto; padding: 24px 20px 48px; min-height: 60vh; }
 .footer { text-align: center; color: var(--ink-3); font-size: 12px; padding: 24px 16px 40px; }
 
 /* ── 홈 ── */
@@ -509,3 +509,27 @@ td.right, th.right { text-align: right; }
 @media (max-width: 640px) { .home-spot { grid-template-columns: 1fr; } .home-spot-map { max-width: 220px; } }
 
 @media (max-width: 640px) { .home-months { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+/* 넓은 화면에서 정보가 가운데로만 몰리지 않게: 히어로를 좌우로 나눈다 */
+.home-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 40px; align-items: center; background: linear-gradient(120deg, var(--hero-a), var(--hero-b) 70%); border: 1px solid var(--line); }
+.home-hero > .eyebrow, .home-hero > h1, .home-hero > p { grid-column: 1; }
+.home-hero > .home-stats { grid-column: 2; grid-row: 1 / span 3; margin: 0; flex-direction: column; gap: 10px; }
+.home-hero .home-stats span { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 22px; min-width: 190px; font-size: 14px; }
+.home-hero .home-stats b { font-size: 26px; display: block; }
+@media (max-width: 760px) {
+  .home-hero { grid-template-columns: 1fr; }
+  .home-hero > .home-stats { grid-column: 1; grid-row: auto; flex-direction: row; margin-top: 18px; }
+  .home-hero .home-stats span { min-width: 0; padding: 6px 14px; }
+  .home-hero .home-stats b { display: inline; font-size: 16px; }
+}
+@media (min-width: 1100px) {
+  .home-movers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-guide-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* 히어로 글자는 가운데 묶고, 남는 높이는 위아래 빈 줄이 가진다 */
+.home-hero { grid-template-rows: 1fr auto auto auto 1fr; }
+.home-hero > .eyebrow { grid-row: 2; }
+.home-hero > h1 { grid-row: 3; }
+.home-hero > p { grid-row: 4; }
+.home-hero > .home-stats { grid-row: 1 / span 5; }
+@media (max-width: 760px) { .home-hero { grid-template-rows: none; } .home-hero > .eyebrow, .home-hero > h1, .home-hero > p { grid-row: auto; } }
