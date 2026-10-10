@@ -424,6 +424,8 @@ export async function mainView(view) {
         <span class="spacer"></span>
         <select class="chip" data-sort aria-label="정렬">
           <option value="cheap" ${mainState.sort === 'cheap' ? 'selected' : ''}>평년보다 싼 순</option>
+          <option value="price_desc" ${mainState.sort === 'price_desc' ? 'selected' : ''}>가격 높은 순</option>
+          <option value="price_asc" ${mainState.sort === 'price_asc' ? 'selected' : ''}>가격 낮은 순</option>
           <option value="name" ${mainState.sort === 'name' ? 'selected' : ''}>이름순</option>
         </select>
       </div>
@@ -442,9 +444,14 @@ export async function mainView(view) {
     });
     if (mainState.phase !== 'now') list = list.filter(inPhase[mainState.phase]);
     else if (mainState.seasonOnly) list = list.filter((i) => i.in_season);
-    list.sort(mainState.sort === 'name'
-      ? (a, b) => a.name.localeCompare(b.name, 'ko')
-      : (a, b) => (a.stale - b.stale) || (a.vs_normal ?? 999) - (b.vs_normal ?? 999));
+    const noPrice = (i) => i.price == null || i.stale;
+    list.sort({
+      name: (a, b) => a.name.localeCompare(b.name, 'ko'),
+      // 가격 없는 것은 어느 방향이든 뒤로. 단위(포기·개·kg)가 달라 품목끼리 단순 비교는 아니다.
+      price_desc: (a, b) => noPrice(a) - noPrice(b) || b.price - a.price,
+      price_asc: (a, b) => noPrice(a) - noPrice(b) || a.price - b.price,
+      cheap: (a, b) => (a.stale - b.stale) || (a.vs_normal ?? 999) - (b.vs_normal ?? 999),
+    }[mainState.sort] || ((a, b) => 0));
     grid.innerHTML = list.length ? list.map((i) => `
       <a class="card" href="#/item/${i.id}">
         <div class="card-top">
@@ -988,6 +995,8 @@ async function auctionListView(view, kind) {
         <option value="weight">거래량 많은 순</option>
         <option value="down">지난주보다 내린 순</option>
         <option value="up">지난주보다 오른 순</option>
+        <option value="price_desc">가격 높은 순</option>
+        <option value="price_asc">가격 낮은 순</option>
         <option value="name">이름순</option>
       </select>
     </div>
@@ -1015,6 +1024,9 @@ async function auctionListView(view, kind) {
       weight: (a, b) => b.weight - a.weight,
       down: byChange(1),
       up: byChange(-1),
+      // 가격 없는 것은 어느 방향이든 뒤로
+      price_desc: (a, b) => (a.kg == null) - (b.kg == null) || b.kg - a.kg,
+      price_asc: (a, b) => (a.kg == null) - (b.kg == null) || a.kg - b.kg,
       name: (a, b) => a.name.localeCompare(b.name, 'ko'),
     }[st.sort]);
     grid.innerHTML = list.length ? list.map((g) => `
@@ -1037,6 +1049,8 @@ async function auctionListView(view, kind) {
       return true;
     });
     if (st.sort === 'name') quietList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    if (st.sort === 'price_desc') quietList.sort((a, b) => (b.last_kg ?? -1) - (a.last_kg ?? -1));
+    if (st.sort === 'price_asc') quietList.sort((a, b) => (a.last_kg ?? Infinity) - (b.last_kg ?? Infinity));
     quietGrid.innerHTML = quietList.length ? quietList.map((s) => `
       <a class="card quiet" href="${href(s)}">
         <div class="card-top"><h3><span class="emoji" aria-hidden="true">${s.emoji || ''}</span>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
