@@ -170,10 +170,23 @@ function wireHomeExtras(view, items, month) {
       <a class="home-chip" href="#/item/${i.id}">${i.emoji} ${esc(i.name)}</a>`).join('')
       : '<p class="empty">이 달 제철로 등록된 품목이 없어요.</p>';
   };
-  drawCal(month);
+  // 달을 바꿀 때마다 아래 화면이 오르내리지 않게, 품목이 가장 많은 달의 높이로 고정한다.
+  let shown = month;
+  const fitCal = () => {
+    const count = (m) => items.filter((i) => (i.season_months || []).includes(m)).length;
+    const fullest = Array.from({ length: 12 }, (_, n) => n + 1).reduce((a, b) => (count(b) > count(a) ? b : a));
+    cal.style.minHeight = '';
+    drawCal(fullest);
+    cal.style.minHeight = `${cal.offsetHeight}px`;
+    drawCal(shown);
+  };
+  fitCal();
+  const onResize = () => { if (cal.isConnected) fitCal(); else window.removeEventListener('resize', onResize); };
+  window.addEventListener('resize', onResize);
   view.querySelectorAll('[data-cal]').forEach((b) => b.addEventListener('click', () => {
     view.querySelectorAll('[data-cal]').forEach((x) => x.setAttribute('aria-pressed', x === b));
-    drawCal(Number(b.dataset.cal));
+    shown = Number(b.dataset.cal);
+    drawCal(shown);
   }));
 
   view.querySelectorAll('[data-group-link]').forEach((a) => a.addEventListener('click', () => {
