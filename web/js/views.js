@@ -935,6 +935,36 @@ function drawAuctionHero(host, cfg, { latest, species, quiet, href }) {
   }
 }
 
+const VARIANT_SHOWN = 8; // 상세의 품종 탭은 이만큼만 먼저 보이고 나머지는 펼친다
+
+// 같은 이름의 품종·상태를 한 묶음으로. 가격은 거래량 가중 평균, 변동률도 거래량으로 가중한다.
+function groupByName(list) {
+  const by = new Map();
+  for (const s of list) {
+    if (!by.has(s.name)) by.set(s.name, []);
+    by.get(s.name).push(s);
+  }
+  return [...by.values()].map((variants) => {
+    variants.sort((a, b) => b.weight - a.weight);
+    const weight = variants.reduce((a, s) => a + s.weight, 0);
+    const priced = variants.filter((s) => s.kg != null);
+    const pw = priced.reduce((a, s) => a + s.weight, 0) || 1;
+    const withChange = variants.filter((s) => s.change != null);
+    const cw = withChange.reduce((a, s) => a + s.weight, 0);
+    const top = variants[0];
+    return {
+      name: top.name,
+      emoji: top.emoji,
+      top,
+      variants,
+      weight,
+      kg: priced.length ? Math.round(priced.reduce((a, s) => a + s.kg * s.weight, 0) / pw) : null,
+      change: cw ? Math.round((withChange.reduce((a, s) => a + s.change * s.weight, 0) / cw) * 10) / 10 : null,
+      markets: Math.max(...variants.map((s) => s.markets || 0)),
+    };
+  });
+}
+
 async function auctionListView(view, kind) {
   const cfg = AUCTIONS[kind];
   const st = listState[kind];
@@ -975,7 +1005,8 @@ async function auctionListView(view, kind) {
     const q = st.query.trim();
     const test = cfg.chips.find(([label]) => label === st.chip)?.[1];
     const keep = (s) => (!test || test(s)) && (!q || s.name.includes(q) || s.state.includes(q));
-    const list = species.filter(keep);
+    // 이름이 같은 것(품종·상태가 다른 것)은 한 장으로 묶는다. 눌러서 상세에서 품종 탭으로 나눠 본다.
+    const list = groupByName(species.filter(keep));
     // 변동률이 없는 것은 어느 정렬에서든 뒤로 보낸다.
     const byChange = (sign) => (a, b) => (a.change == null) - (b.change == null) || (a.change - b.change) * sign;
     list.sort({
@@ -984,16 +1015,25 @@ async function auctionListView(view, kind) {
       up: byChange(-1),
       name: (a, b) => a.name.localeCompare(b.name, 'ko'),
     }[st.sort]);
-    grid.innerHTML = list.length ? list.map((s) => `
-      <a class="card" href="${href(s)}">
-        <div class="card-top"><h3><span class="emoji" aria-hidden="true">${s.emoji || ''}</span>${esc(s.name)}</h3><span class="tag">${esc(s.state)}</span></div>
-        <div class="price num">${won(s.kg)}<small>/ kg</small></div>
-        <div class="card-foot"><span>${esc(placeLabel(s))}</span>${changeBadge(s.change)}</div>
-        <div class="card-sub num">최근 7일 ${s.weight.toLocaleString('ko-KR')}kg · 시장 ${s.markets}곳</div>
-        ${seasonStrip(s, covered, cfg)}
+    grid.innerHTML = list.length ? list.map((g) => `
+      <a class="card" href="${href(g.top)}">
+        <div class="card-top"><h3><span class="emoji" aria-hidden="true">${g.emoji || ''}</span>${esc(g.name)}</h3>
+          <span class="tag">${g.variants.length > 1 ? `${g.variants.length}가지` : esc(g.top.state)}</span></div>
+        <div class="price num">${won(g.kg)}<small>/ kg</small></div>
+        <div class="card-foot"><span>${esc(placeLabel(g.top))}</span>${changeBadge(g.change)}</div>
+        ${g.variants.length > 1 ? `<div class="variant-line">${g.variants.slice(0, 3).map((v) => esc(v.state)).join(' · ')}${g.variants.length > 3 ? ` 외 ${g.variants.length - 3}` : ''}</div>` : ''}
+        <div class="card-sub num">최근 7일 ${g.weight.toLocaleString('ko-KR')}kg · 시장 ${g.markets}곳</div>
+        ${seasonStrip(g.top, covered, cfg)}
       </a>`).join('') : `<p class="empty">조건에 맞는 ${cfg.unitWord}이 없어요.</p>`;
 
-    const quietList = quiet.filter(keep);
+    // 뜸한 것: 같은 이름이 위 목록에 이미 있으면 빼고(그 품종은 상세의 탭에서 본다), 이름별로 하나만 둔다.
+    const activeNames = new Set(list.map((g) => g.name));
+    const quietSeen = new Set();
+    const quietList = quiet.filter(keep).filter((s) => {
+      if (activeNames.has(s.name) || quietSeen.has(s.name)) return false;
+      quietSeen.add(s.name);
+      return true;
+    });
     if (st.sort === 'name') quietList.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
     quietGrid.innerHTML = quietList.length ? quietList.map((s) => `
       <a class="card quiet" href="${href(s)}">
@@ -1034,9 +1074,11 @@ async function auctionDetailView(view, kind, code, state, session) {
       <div>
         <h1><span class="emoji" aria-hidden="true">${d.emoji || ''}</span>${esc(d.name)}</h1>
         ${d.story ? `<p class="detail-intro">${esc(d.story)}</p>` : ''}
-        <div class="detail-meta">
-          ${d.states.map((s) => `<a class="chip" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}">${esc(s)}</a>`).join(' ')}
-        </div>
+        ${d.states.length > 1 ? `<div class="variant-tabs" role="tablist" aria-label="품종·상태">
+          <span class="variant-label">품종·상태 ${d.states.length}가지</span>
+          ${d.states.map((s, n) => `<a class="chip${n >= VARIANT_SHOWN && s !== d.state ? ' extra' : ''}" role="tab" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}" aria-selected="${s === d.state}">${esc(s)}</a>`).join('')}
+          ${d.states.length > VARIANT_SHOWN ? `<button type="button" class="chip more" data-variant-more aria-expanded="false">+${d.states.length - VARIANT_SHOWN}가지 더 보기</button>` : ''}
+        </div>` : `<div class="detail-meta"><span class="tag">${esc(d.state)}</span></div>`}
         <div class="detail-actions">${cartButton(`${kind}:${code}|${d.state}`)}</div>
       </div>
       <div class="now-box">
@@ -1095,6 +1137,12 @@ async function auctionDetailView(view, kind, code, state, session) {
   recent.add(entry);
   trackOnce(api, kind, `${code}|${d.state}`);
   wireCartButton(view, entry, session);
+  view.querySelector('[data-variant-more]')?.addEventListener('click', (e) => {
+    const tabs = view.querySelector('.variant-tabs');
+    const open = tabs.classList.toggle('open');
+    e.currentTarget.setAttribute('aria-expanded', String(open));
+    e.currentTarget.textContent = open ? '접기' : `+${d.states.length - VARIANT_SHOWN}가지 더 보기`;
+  });
   if (kind === 'fish') {
     closedNoteFor(d.name.split('(')[0]).then((html) => {
       if (html) view.querySelector('.detail-actions')?.insertAdjacentHTML('afterend', html);

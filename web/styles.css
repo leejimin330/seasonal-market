@@ -673,3 +673,12 @@ td.right, th.right { text-align: right; }
   .months { grid-template-columns: repeat(6, 1fr); max-width: none; gap: 6px; }
   .months span { white-space: nowrap; padding: 8px 0; font-size: 13px; }
 }
+
+/* 같은 이름 묶음: 목록 카드의 품종 줄, 상세의 품종 탭 */
+.variant-line { margin-top: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.variant-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
+.variant-label { font-size: 13px; font-weight: 700; color: var(--ink-3); margin-right: 4px; }
+
+.variant-tabs .extra { display: none; }
+.variant-tabs.open .extra { display: inline-block; }
+.variant-tabs .more { border-style: dashed; color: var(--brand); font-weight: 700; }
