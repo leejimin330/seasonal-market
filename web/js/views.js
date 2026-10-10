@@ -1076,7 +1076,7 @@ async function auctionDetailView(view, kind, code, state, session) {
         ${d.story ? `<p class="detail-intro">${esc(d.story)}</p>` : ''}
         ${d.states.length > 1 ? `<div class="variant-tabs" role="tablist" aria-label="품종·상태">
           <span class="variant-label">품종·상태 ${d.states.length}가지</span>
-          ${d.states.map((s, n) => `<a class="chip${n >= VARIANT_SHOWN && s !== d.state ? ' extra' : ''}" role="tab" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}" aria-selected="${s === d.state}">${esc(s)}</a>`).join('')}
+          ${d.states.map((s, n) => `<a class="chip${n >= VARIANT_SHOWN && s !== d.state ? ' extra' : ''}" data-state="${esc(s)}" role="tab" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}" aria-selected="${s === d.state}">${esc(s)}</a>`).join('')}
           ${d.states.length > VARIANT_SHOWN ? `<button type="button" class="chip more" data-variant-more aria-expanded="false">+${d.states.length - VARIANT_SHOWN}가지 더 보기</button>` : ''}
         </div>` : `<div class="detail-meta"><span class="tag">${esc(d.state)}</span></div>`}
         <div class="detail-actions">${cartButton(`${kind}:${code}|${d.state}`)}</div>
@@ -1137,6 +1137,45 @@ async function auctionDetailView(view, kind, code, state, session) {
   recent.add(entry);
   trackOnce(api, kind, `${code}|${d.state}`);
   wireCartButton(view, entry, session);
+  // 같은 이름의 품종끼리 가격을 나란히: 탭에 가격을 붙이고, 비교 표를 넣는다
+  cfg.list().then(({ species }) => {
+    const vs = species.filter((x) => x.name === d.name && x.code === code).sort((a, b) => b.weight - a.weight);
+    if (vs.length < 2) return;
+    const byState = new Map(vs.map((v) => [v.state, v]));
+    const tabs = view.querySelector('.variant-tabs');
+    const chips = [...tabs.querySelectorAll('a.chip')];
+    chips.forEach((a) => {
+      const v = byState.get(a.dataset.state);
+      if (v && v.kg != null) a.insertAdjacentHTML('beforeend', ` <small class="num">${won(v.kg)}</small>`);
+    });
+    // 거래량 많은 순으로 탭을 다시 놓고, 처음 보이는 8개와 접힌 것을 그 순서로 다시 나눈다
+    const w = (a) => byState.get(a.dataset.state)?.weight ?? -1;
+    const more = tabs.querySelector('[data-variant-more]');
+    chips.sort((a, b) => w(b) - w(a)).forEach((a, n) => {
+      a.classList.toggle('extra', n >= VARIANT_SHOWN && a.getAttribute('aria-pressed') !== 'true');
+      tabs.insertBefore(a, more);
+    });
+    const panel = view.querySelector('#auction-trend');
+    if (!panel) return;
+    const max = Math.max(...vs.map((v) => v.weight), 1);
+    panel.insertAdjacentHTML('beforebegin', `
+      <section class="panel variant-panel">
+        <div class="panel-head"><h2>품종별 비교 <small>최근 7일 · 거래량 많은 순</small></h2></div>
+        <ul class="variant-table">
+          ${vs.map((v) => `
+            <li class="${v.state === d.state ? 'current' : ''}">
+              <a href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(v.state)}">
+                <span class="v-name">${esc(v.state)}</span>
+                <span class="v-bar" aria-hidden="true"><i style="width:${Math.max(3, Math.round((v.weight / max) * 100))}%"></i></span>
+                <span class="v-kg num">${v.weight.toLocaleString('ko-KR')}kg</span>
+                <b class="v-price num">${won(v.kg)}<small>/kg</small></b>
+                <span class="v-change">${changeBadge(v.change)}</span>
+              </a>
+            </li>`).join('')}
+        </ul>
+      </section>`);
+  }).catch(() => {});
+
   view.querySelector('[data-variant-more]')?.addEventListener('click', (e) => {
     const tabs = view.querySelector('.variant-tabs');
     const open = tabs.classList.toggle('open');

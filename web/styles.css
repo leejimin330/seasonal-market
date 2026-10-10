@@ -682,3 +682,21 @@ td.right, th.right { text-align: right; }
 .variant-tabs .extra { display: none; }
 .variant-tabs.open .extra { display: inline-block; }
 .variant-tabs .more { border-style: dashed; color: var(--brand); font-weight: 700; }
+
+.variant-tabs .chip small { color: var(--ink-3); margin-left: 2px; }
+.variant-tabs .chip[aria-pressed="true"] small { color: #fff; opacity: .9; }
+.variant-table { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.variant-table a { display: grid; grid-template-columns: minmax(90px, 160px) 1fr 110px 110px 120px; gap: 12px; align-items: center; padding: 10px 14px; background: var(--surface-2); border-radius: 10px; text-decoration: none; }
+.variant-table a:hover { background: var(--brand-soft); }
+.variant-table li.current a { outline: 2px solid var(--brand); outline-offset: -2px; background: var(--surface); }
+.v-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.v-bar i { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+.v-kg { text-align: right; color: var(--ink-2); font-size: 13px; }
+.v-price { text-align: right; }
+.v-price small { color: var(--ink-3); font-weight: 400; margin-left: 2px; }
+@media (max-width: 760px) {
+  .variant-table a { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 6px; }
+  .variant-table .v-bar { grid-column: 1 / -1; grid-row: 2; }
+  .variant-table .v-kg { display: none; }
+}
