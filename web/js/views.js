@@ -137,7 +137,7 @@ function homeExtrasHtml(items, month) {
 
     <section class="home-block">
       <h2 class="section-title">제철 달력 <small>달을 눌러 그달 제철을 확인해요</small></h2>
-      <div class="controls" role="toolbar" aria-label="월 선택">${monthButtons}</div>
+      <div class="home-months" role="toolbar" aria-label="월 선택">${monthButtons}</div>
       <div class="home-cal" id="home-cal"></div>
     </section>
 

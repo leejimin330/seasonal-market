@@ -484,8 +484,10 @@ td.right, th.right { text-align: right; }
 .home-mover h3 { margin: 0 0 10px; font-size: 15px; }
 .home-preview b.down { color: var(--cheap); }
 .home-preview b.up { color: var(--pricey); }
-.home-cal { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.home-chip { background: var(--surface); border-radius: 999px; padding: 7px 14px; box-shadow: var(--shadow); text-decoration: none; font-size: 14px; }
+.home-months { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; }
+.home-months .chip { width: 100%; justify-content: center; text-align: center; padding-inline: 0; }
+.home-cal { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin-top: 12px; align-content: start; }
+.home-chip { display: flex; align-items: center; justify-content: center; height: 44px; background: var(--surface); border-radius: 12px; padding: 0 8px; box-shadow: var(--shadow); text-decoration: none; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .home-chip:hover { background: var(--brand-soft); }
 .home-spot { display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 20px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
 .home-spot-map svg { width: 100%; height: auto; }
@@ -505,3 +507,5 @@ td.right, th.right { text-align: right; }
 .home-guide-grid h3 { margin: 0 0 6px; font-size: 15px; }
 .home-guide-grid p { margin: 0; color: var(--ink-2); font-size: 14px; }
 @media (max-width: 640px) { .home-spot { grid-template-columns: 1fr; } .home-spot-map { max-width: 220px; } }
+
+@media (max-width: 640px) { .home-months { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
