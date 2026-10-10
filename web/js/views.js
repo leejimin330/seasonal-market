@@ -936,6 +936,7 @@ function drawAuctionHero(host, cfg, { latest, species, quiet, href }) {
 }
 
 const fmtWonShort = (v) => (v >= 1e8 ? `${(v / 1e8).toFixed(1)}억원` : `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`);
+const variantUi = { tabsOpen: false, othersOpen: false };
 const VARIANT_SHOWN = 8; // 상세의 품종 탭은 이만큼만 먼저 보이고 나머지는 펼친다
 
 // 같은 이름의 품종·상태를 한 묶음으로. 가격은 거래량 가중 평균, 변동률도 거래량으로 가중한다.
@@ -1075,10 +1076,10 @@ async function auctionDetailView(view, kind, code, state, session) {
       <div>
         <h1><span class="emoji" aria-hidden="true">${d.emoji || ''}</span>${esc(d.name)}</h1>
         ${d.story ? `<p class="detail-intro">${esc(d.story)}</p>` : ''}
-        ${d.states.length > 1 ? `<div class="variant-tabs" role="tablist" aria-label="품종·상태">
+        ${d.states.length > 1 ? `<div class="variant-tabs${variantUi.tabsOpen ? ' open' : ''}" role="tablist" aria-label="품종·상태">
           <span class="variant-label">품종·상태 ${d.states.length}가지</span>
           ${d.states.map((s, n) => `<a class="chip${n >= VARIANT_SHOWN && s !== d.state ? ' extra' : ''}" data-state="${esc(s)}" role="tab" href="#/${cfg.path}/${encodeURIComponent(code)}?state=${encodeURIComponent(s)}" aria-pressed="${s === d.state}" aria-selected="${s === d.state}">${esc(s)}</a>`).join('')}
-          ${d.states.length > VARIANT_SHOWN ? `<button type="button" class="chip more" data-variant-more aria-expanded="false">+${d.states.length - VARIANT_SHOWN}가지 더 보기</button>` : ''}
+          ${d.states.length > VARIANT_SHOWN ? `<button type="button" class="chip more" data-variant-more aria-expanded="${variantUi.tabsOpen}">${variantUi.tabsOpen ? '접기' : `+${d.states.length - VARIANT_SHOWN}가지 더 보기`}</button>` : ''}
         </div>` : `<div class="detail-meta"><span class="tag">${esc(d.state)}</span></div>`}
         <div class="detail-actions">${cartButton(`${kind}:${code}|${d.state}`)}</div>
       </div>
@@ -1195,13 +1196,14 @@ async function auctionDetailView(view, kind, code, state, session) {
         </div>
         <ul class="variant-table">${major.map((v, n) => row(v, n + 1)).join('')}</ul>
         ${others.length ? `
-          <button type="button" class="btn ghost small" data-others aria-expanded="false">그 외 ${others.length}가지 보기</button>
-          <ul class="variant-table others" hidden>${others.map((v) => row(v, 0)).join('')}</ul>` : ''}`;
+          <button type="button" class="btn ghost small" data-others aria-expanded="${variantUi.othersOpen}">${variantUi.othersOpen ? '접기' : `그 외 ${others.length}가지 보기`}</button>
+          <ul class="variant-table others" ${variantUi.othersOpen ? '' : 'hidden'}>${others.map((v) => row(v, 0)).join('')}</ul>` : ''}`;
       box.querySelectorAll('[data-metric]').forEach((b) => b.addEventListener('click', () => { metric.key = b.dataset.metric; draw(); }));
       const btn = box.querySelector('[data-others]');
       btn?.addEventListener('click', () => {
         const list = box.querySelector('.others');
         list.hidden = !list.hidden;
+        variantUi.othersOpen = !list.hidden;
         btn.setAttribute('aria-expanded', String(!list.hidden));
         btn.textContent = list.hidden ? `그 외 ${others.length}가지 보기` : '접기';
       });
@@ -1212,6 +1214,7 @@ async function auctionDetailView(view, kind, code, state, session) {
   view.querySelector('[data-variant-more]')?.addEventListener('click', (e) => {
     const tabs = view.querySelector('.variant-tabs');
     const open = tabs.classList.toggle('open');
+    variantUi.tabsOpen = open;
     e.currentTarget.setAttribute('aria-expanded', String(open));
     e.currentTarget.textContent = open ? '접기' : `+${d.states.length - VARIANT_SHOWN}가지 더 보기`;
   });
