@@ -98,6 +98,15 @@ const inRange = (c, month, day) => {
 };
 const rangeText = (c) => `${c.start[0]}/${c.start[1]} ~ ${c.end[0]}/${c.end[1]}`;
 
+// 이름에 해당하는 금어기가 있으면 { active, range, memo }. 없으면 null.
+export async function closedStatus(name) {
+  const data = await loadClosed();
+  const hit = data.items.find((c) => name.includes(c.name));
+  if (!hit) return null;
+  const now = new Date();
+  return { active: inRange(hit, now.getMonth() + 1, now.getDate()), range: rangeText(hit), memo: hit.memo || '' };
+}
+
 export async function closedNoteFor(name) {
   const data = await loadClosed();
   const hit = data.items.find((c) => name.includes(c.name));
@@ -249,6 +258,35 @@ export async function dictView(view, q) {
   };
   input.addEventListener('input', draw);
   draw();
+}
+
+// 홈 캐러셀의 마지막 장. 이번 달로 끝나는 것, 새로 시작하는 것, 지금 금어기인 어종을 한 장에 모은다.
+export async function homeNewsSlideHtml() {
+  const all = await loadAll();
+  const { month } = all;
+  const closed = await loadClosed();
+  const closedNow = closed.items.filter((c) => inRange(c, month, new Date().getDate()));
+  const retailFirst = (a, b) => (a.kind === 'item' ? 0 : 1) - (b.kind === 'item' ? 0 : 1);
+  const pick = (test) => uniqByName(all.records.filter((r) => test(phaseOf(r, month)))).sort(retailFirst).slice(0, 8);
+  const ending = pick((p) => p.ending);
+  const starting = pick((p) => p.starting);
+  const col = (title, list) => `
+    <div class="home-news-col"><h3>${title}</h3>
+      <div class="home-cal cal-free">${list.length ? list.map(chip).join('') : '<span class="top-note">해당하는 품목이 없어요.</span>'}</div></div>`;
+  return `
+    <div class="home-slide-text">
+      <div class="eyebrow">이달의 소식</div>
+      <h2>${month}월에 챙겨 볼 것들</h2>
+      <p>끝나기 전에 먹어 둘 것, 새로 시작하는 제철, 지금 잡을 수 없는 어종이에요.</p>
+      <a class="hero-cta" href="#/calendar">제철 달력 전체 보기 →</a>
+    </div>
+    <div class="home-news-cols">
+      ${col('⏳ 이번 달이 마지막', ending)}
+      ${col('🌱 새로 제철이 시작', starting)}
+      <div class="home-news-col"><h3>🚫 지금 금어기</h3>
+        ${closedNow.length ? `<ul class="closed-list">${closedNow.slice(0, 4).map((c) => `<li><b>${esc(c.name)}</b> ${rangeText(c)}</li>`).join('')}</ul>`
+          : '<span class="top-note">지금 금어기인 대표 어종이 없어요.</span>'}</div>
+    </div>`;
 }
 
 // ── 홈: 알림, 이달의 소식, 오늘의 장보기 추천 ───────────────────

@@ -5,7 +5,7 @@ import { carousel } from './carousel.js';
 import { renderTrendChart } from './chart.js';
 import { renderKoreaMap } from './koreamap.js';
 import { alerts, cart, recent, trackOnce } from './mylist.js';
-import { closedNoteFor, drawHomeExtras2, loadAll, phaseOf } from './pages.js';
+import { closedNoteFor, closedStatus, drawHomeExtras2, homeNewsSlideHtml, loadAll, phaseOf } from './pages.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (v) => (v == null ? '—' : `${v.toLocaleString('ko-KR')}원`);
@@ -63,6 +63,10 @@ export async function homeView(view) {
     const seen = new Set();
     return list.filter((s) => !seen.has(s.name) && seen.add(s.name)).slice(0, n);
   };
+  const cheapSeason5 = inSeason.filter((i) => i.vs_normal != null && i.vs_normal < 0)
+    .sort((a, b) => a.vs_normal - b.vs_normal).slice(0, 5);
+  const produceTop5 = topByName(produce.species, 5);
+  const fishTop5 = topByName(fish.species, 5);
   const produceTop = topByName(produce.species, 4);
   const fishTop = topByName(fish.species, 4);
   const today = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
@@ -71,16 +75,7 @@ export async function homeView(view) {
     <li><a href="${href(s)}"><span>${s.emoji || ''} ${esc(s.name)}</span><b class="num">${price(s)}</b></a></li>`).join('');
 
   view.innerHTML = `
-    <section class="home-hero">
-      <div class="eyebrow">${today} · ${month}월의 장바구니</div>
-      <h1>장 보기 전에,<br>지금 싸고 맛있는 제철부터.</h1>
-      <p>마트 소매가부터 도매시장 경매가, 수협 위판장 산지가까지 공공데이터로 매일 모아 보여드려요.</p>
-      <div class="home-stats">
-        <span><b class="num">${inSeason.length}</b>지금 제철</span>
-        <span><b class="num">${uniq(produce.species)}</b>도매 품목</span>
-        <span><b class="num">${uniq(fish.species)}</b>수산물</span>
-      </div>
-    </section>
+    <section class="hero-carousel home-carousel" id="home-hero"></section>
 
     <section class="home-banners">
       <article class="home-banner season">
@@ -111,10 +106,96 @@ export async function homeView(view) {
     <section class="home-block" id="home-rank"></section>
     ${homeExtrasHtml(items.items, month)}`;
   wireHomeExtras(view, items.items, month);
+  drawHomeCarousel(view.querySelector('#home-hero'), {
+    today, month, inSeason, produce: produceTop5, fish: fishTop5, cheap: cheapSeason5,
+    counts: { season: inSeason.length, produce: uniq(produce.species), fish: uniq(fish.species) },
+  });
   drawRank(view.querySelector('#home-rank'));
   drawHomeExtras2(view);
 }
 
+
+// 홈 상단 캐러셀. 첫 장은 인사말, 이어서 제철 가격 하락 · 도매 경매 · 수산 위판, 마지막은 이달의 소식·금어기.
+// 소식 장은 달력 자료를 따로 받아 오므로 준비되는 대로 뒤에 붙인다.
+function drawHomeCarousel(host, { today, month, produce, fish, cheap, counts }) {
+  if (!host) return;
+  const { node, addSlide } = carousel({ label: '오늘의 장바구니 정보', interval: 7000 });
+  host.appendChild(node);
+
+  const intro = document.createElement('div');
+  intro.className = 'hero-slide home-slide home-slide-intro';
+  intro.innerHTML = `
+    <div class="home-slide-text">
+      <div class="eyebrow">${today} · ${month}월의 장바구니</div>
+      <h1>장 보기 전에,<br>지금 싸고 맛있는 제철부터.</h1>
+      <p>마트 소매가부터 도매시장 경매가, 수협 위판장 산지가까지 공공데이터로 매일 모아 보여드려요.</p>
+    </div>
+    <div class="home-slide-stats">
+      <span><b class="num">${counts.season}</b>지금 제철</span>
+      <span><b class="num">${counts.produce}</b>도매 품목</span>
+      <span><b class="num">${counts.fish}</b>수산물</span>
+    </div>`;
+  addSlide(intro);
+
+  const listSlide = ({ cls, eyebrow, title, sub, rows, more, moreHref }) => {
+    const slide = document.createElement('div');
+    slide.className = `hero-slide home-slide home-slide-list ${cls}`;
+    slide.innerHTML = `
+      <div class="home-slide-text">
+        <div class="eyebrow">${eyebrow}</div>
+        <h2>${title}</h2>
+        <p>${sub}</p>
+        <a class="hero-cta" href="${moreHref}">${more} →</a>
+      </div>
+      <ol class="home-slide-rows">${rows.map((r, n) => `
+        <li><a href="${esc(r.href)}">
+          <span class="top-no num">${n + 1}</span>
+          <span class="home-slide-name">${r.emoji || ''} ${esc(r.name)}</span>
+          <span class="home-slide-price num">${r.price}</span>
+          ${r.badge ? `<span class="hero-drop">${r.badge}</span>` : '<span></span>'}
+        </a></li>`).join('')}</ol>`;
+    addSlide(slide);
+  };
+
+  if (cheap.length) {
+    listSlide({
+      cls: 'home-slide-season', eyebrow: '제철 소매가', title: '평년보다 가장 싼 제철 TOP',
+      sub: '지금 제철이면서 평년 가격보다 많이 내린 품목이에요.',
+      rows: cheap.map((i) => ({
+        href: `#/item/${i.id}`, emoji: i.emoji, name: i.name,
+        price: `${won(i.price)}<small> / ${esc(i.price_unit)}</small>`, badge: `▼ ${Math.abs(i.vs_normal)}%`,
+      })),
+      more: '제철 시세 보러 가기', moreHref: '#/season',
+    });
+  }
+  const auctionRows = (list, path) => list.map((s) => ({
+    href: `#/${path}/${encodeURIComponent(s.code)}?state=${encodeURIComponent(s.state)}`,
+    emoji: s.emoji, name: s.name,
+    price: `${won(s.kg)}<small> / kg</small>`,
+    badge: s.change != null && s.change < 0 ? `▼ ${Math.abs(s.change)}%` : '',
+  }));
+  if (produce.length) {
+    listSlide({
+      cls: 'auction-produce', eyebrow: '농산물 도매', title: '오늘의 도매시장 경매가',
+      sub: '전국 공영도매시장 경매에서 오늘 거래된 대표 품목이에요.',
+      rows: auctionRows(produce, 'produce'), more: '도매 시세 보러 가기', moreHref: '#/produce',
+    });
+  }
+  if (fish.length) {
+    listSlide({
+      cls: 'auction-fish', eyebrow: '수산물 산지', title: '수협 위판장 산지 시세',
+      sub: '전국 수협 위판장 경매에서 거래된 대표 어종이에요.',
+      rows: auctionRows(fish, 'fish'), more: '산지 시세 보러 가기', moreHref: '#/fish',
+    });
+  }
+  homeNewsSlideHtml().then((html) => {
+    if (!html || !node.isConnected) return;
+    const slide = document.createElement('div');
+    slide.className = 'hero-slide home-slide home-slide-news';
+    slide.innerHTML = html;
+    addSlide(slide);
+  }).catch(() => {});
+}
 
 // ── 인기 랭킹 ────────────────────────────────────────────────
 // 판매액·물량은 최근 7일 도매 경매와 위판 자료, 열람수는 이 사이트의 상세 화면 조회다.
@@ -229,24 +310,40 @@ export async function cartView(view) {
   const auction = (data) => Object.fromEntries(data.species.map((s) => [`${s.code}|${s.state}`, s]));
   const lookup = { item: retail, produce: auction(produce), fish: auction(fish) };
 
-  const rows = list.map((e) => {
+  const closed = await Promise.all(list.map((e) => closedStatus(e.name).catch(() => null)));
+  const rows = list.map((e, n) => {
     const [kind, ...rest] = e.key.split(':');
     const live = lookup[kind]?.[rest.join(':')];
     let price = '—';
     let sum = null;
+    let normal = null;   // 평년 가격 기준 같은 수량의 금액
+    let vs = null;
     if (kind === 'item' && live && live.price != null && !live.stale) {
       price = `${won(live.price)} / ${esc(live.price_unit)}`;
       sum = live.price * (e.qty || 1);
+      if (live.vs_normal != null) {
+        vs = live.vs_normal;
+        normal = (live.price / (1 + live.vs_normal / 100)) * (e.qty || 1);
+      }
     } else if (live && live.kg != null) {
       price = `${won(live.kg)} / kg`;
     }
-    return { e, price, sum, kind };
+    return { e, price, sum, kind, normal, vs, closed: closed[n] };
   });
   const total = rows.reduce((a, r) => a + (r.sum || 0), 0);
+  // 평년가를 아는 품목만 비교한다. 모르는 품목까지 넣으면 합계가 어긋난다.
+  const known = rows.filter((r) => r.normal != null);
+  const knownNow = known.reduce((a, r) => a + r.sum, 0);
+  const knownNormal = known.reduce((a, r) => a + r.normal, 0);
+  const gap = Math.round(knownNormal - knownNow);
+  const banned = rows.filter((r) => r.closed?.active);
+  const shopLinks = (name) => SHOPS.slice(0, 3)
+    .map(([label, url]) => `<a href="${esc(url(encodeURIComponent(name)))}" target="_blank" rel="noopener noreferrer">${label}</a>`).join('');
   view.innerHTML = `
     <h1 class="page-title">🧺 장바구니</h1>
+    ${banned.length ? `<p class="cart-warn" role="status">🚫 지금 금어기인 어종이 담겨 있어요: ${banned.map((r) => `<b>${esc(r.e.name)}</b> (${r.closed.range})`).join(', ')}</p>` : ''}
     <ul class="cart-list">
-      ${rows.map(({ e, price, sum, kind }) => `
+      ${rows.map(({ e, price, sum, kind, vs, closed: cl }) => `
         <li>
           <a class="cart-name" href="${esc(e.href)}">${esc(e.emoji || '')} ${esc(e.name)}</a>
           <span class="cart-price num">${price}</span>
@@ -258,9 +355,15 @@ export async function cartView(view) {
             </span>
             <b class="num cart-sum">${sum != null ? won(sum) : '—'}</b>` : '<span></span><span></span>'}
           <button type="button" class="btn ghost small" data-del="${esc(e.key)}">빼기</button>
+          <div class="cart-sub">
+            ${vs != null ? `<span class="badge ${vs < 0 ? 'cheap' : 'dear'}">평년보다 ${vs < 0 ? '▼' : '▲'} ${Math.abs(vs)}%</span>` : ''}
+            ${cl ? `<span class="cart-closed${cl.active ? ' on' : ''}">🚫 금어기 ${cl.range}${cl.active ? ' · 지금 금어기' : ''}</span>` : ''}
+            <span class="cart-shops">${shopLinks(e.name)}</span>
+          </div>
         </li>`).join('')}
     </ul>
     <p class="cart-total">소매 품목 예상 합계 <b class="num">${won(total)}</b>
+      ${known.length && gap !== 0 ? `<span class="cart-gap ${gap > 0 ? 'save' : 'more'}">평년 가격보다 ${won(Math.abs(gap))} ${gap > 0 ? '아껴요' : '더 들어요'}</span>` : ''}
       <small>· 도매·위판 품목은 kg 시세만 보여 드려요. 실제 판매가와 다를 수 있어요.</small></p>`;
   const redraw = () => cartView(view);
   view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => { cart.remove(b.dataset.del); redraw(); }));
